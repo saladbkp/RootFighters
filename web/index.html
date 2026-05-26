@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CTF Stage — Battle View</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- battle canvas fills the screen -->
+  <canvas id="stage"></canvas>
+
+  <!-- HUD overlay (DOM, so text stays crisp & shake-free) -->
+  <div id="hud">
+    <header id="topbar">
+      <div class="team left">
+        <div class="tname" id="nameA">Team Alpha</div>
+        <div class="tscore" id="scoreA">0</div>
+        <div class="solves" id="solvesA"></div>
+      </div>
+
+      <div class="center">
+        <div id="round">—</div>
+        <div id="timer">30:00</div>
+        <div id="banlist"></div>
+      </div>
+
+      <div class="team right">
+        <div class="tname" id="nameB">Team Bravo</div>
+        <div class="tscore" id="scoreB">0</div>
+        <div class="solves" id="solvesB"></div>
+      </div>
+    </header>
+
+    <div id="banner"></div>
+
+    <ul id="log"></ul>
+
+    <div id="status"><i></i>connecting…</div>
+
+    <div id="devpanel">
+      <b>dev preview</b> (press <kbd>d</kbd> to hide) — works offline<br />
+      <div id="devlegend"></div>
+      <div class="hint"><kbd>1-9</kbd> Team A &nbsp;·&nbsp; <kbd>shift</kbd>+<kbd>1-9</kbd> Team B
+        &nbsp;·&nbsp; <kbd>,</kbd>/<kbd>.</kbd> wrong A/B &nbsp;·&nbsp; <kbd>space</kbd> simultaneous</div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
