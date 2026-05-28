@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -8,7 +9,7 @@ namespace CtfStage
 {
     /// <summary>
     /// One team's character. Supports three animation modes:
-    /// 1. AnimationClips from GLB → cloned as legacy + played via Animation component
+    /// 1. AnimationClips from FBX → cloned as legacy + played via Animation component
     /// 2. Existing Animator → trigger-based
     /// 3. No animation → procedural lunge/flinch
     /// </summary>
@@ -30,10 +31,16 @@ namespace CtfStage
         public AnimationClip hurtClip;
         public AnimationClip winClip;
 
+        [Header("Idle Variety Clips (play randomly after 15s idle)")]
+        public AnimationClip[] idleVarietyClips;
+
         Vector3 baseLocalPos, baseScale;
         Coroutine punching;
         bool clipAnimReady;
         Animation legacyAnim;
+        float lastActionTime;
+        float idleVarietyInterval = 15f;
+        bool playingVariety;
 
         void Awake()
         {
@@ -52,7 +59,7 @@ namespace CtfStage
 
             if (idleClip != null || attackClip != null)
             {
-                Debug.Log($"[StageFighter] {name}: setting up clip anim. idle={idleClip?.name}, attack={attackClip?.name}");
+                Debug.Log($"[StageFighter] {name}: setting up clip anim. idle={idleClip?.name}, attack={attackClip?.name}, hurt={hurtClip?.name}, win={winClip?.name}");
                 SetupClipAnimation();
             }
             else
@@ -63,6 +70,10 @@ namespace CtfStage
 
         void SetupClipAnimation()
         {
+            // Disable any existing Animator so it doesn't fight with Legacy Animation
+            var existingAnimator = GetComponent<Animator>();
+            if (existingAnimator != null) existingAnimator.enabled = false;
+
             legacyAnim = gameObject.GetComponent<Animation>();
             if (legacyAnim == null) legacyAnim = gameObject.AddComponent<Animation>();
 
@@ -72,27 +83,31 @@ namespace CtfStage
                 legacyAnim.AddClip(clip, "idle");
                 legacyAnim.clip = clip;
                 legacyAnim.Play("idle");
-                Debug.Log($"[StageFighter] {name}: playing idle ({idleClip.length:F2}s, {CountCurves(idleClip)} curves)");
+                Debug.Log($"[StageFighter] {name}: playing idle ({idleClip.length:F2}s)");
             }
             if (attackClip != null)
-            {
-                var clip = CloneAsLegacy(attackClip, WrapMode.Once);
-                legacyAnim.AddClip(clip, "attack");
-            }
+                legacyAnim.AddClip(CloneAsLegacy(attackClip, WrapMode.Once), "attack");
             if (hurtClip != null)
-            {
-                var clip = CloneAsLegacy(hurtClip, WrapMode.Once);
-                legacyAnim.AddClip(clip, "hurt");
-            }
+                legacyAnim.AddClip(CloneAsLegacy(hurtClip, WrapMode.Once), "hurt");
             if (winClip != null)
+                legacyAnim.AddClip(CloneAsLegacy(winClip, WrapMode.Once), "win");
+
+            // Register idle variety clips
+            if (idleVarietyClips != null)
             {
-                var clip = CloneAsLegacy(winClip, WrapMode.Once);
-                legacyAnim.AddClip(clip, "win");
+                for (int i = 0; i < idleVarietyClips.Length; i++)
+                {
+                    if (idleVarietyClips[i] != null)
+                    {
+                        legacyAnim.AddClip(CloneAsLegacy(idleVarietyClips[i], WrapMode.Once), $"variety_{i}");
+                    }
+                }
             }
+
+            lastActionTime = Time.time;
             clipAnimReady = true;
         }
 
-        /// Clone an AnimationClip and convert to legacy mode so Animation component can play it
         static AnimationClip CloneAsLegacy(AnimationClip src, WrapMode wrap)
         {
             var clone = new AnimationClip();
@@ -108,34 +123,52 @@ namespace CtfStage
                 if (curve != null)
                     clone.SetCurve(binding.path, binding.type, binding.propertyName, curve);
             }
-
-            var objBindings = AnimationUtility.GetObjectReferenceCurveBindings(src);
-            foreach (var binding in objBindings)
-            {
-                var keyframes = AnimationUtility.GetObjectReferenceCurve(src, binding);
-                AnimationUtility.SetObjectReferenceCurve(clone, binding, keyframes);
-            }
 #endif
-
             clone.EnsureQuaternionContinuity();
             return clone;
-        }
-
-        static int CountCurves(AnimationClip clip)
-        {
-#if UNITY_EDITOR
-            return AnimationUtility.GetCurveBindings(clip).Length;
-#else
-            return -1;
-#endif
         }
 
         public Vector3 FistPosition =>
             fistPoint != null ? fistPoint.position
                               : transform.position + new Vector3(facing * 0.5f, 1.1f, 0f);
 
+        void Update()
+        {
+            if (!clipAnimReady || legacyAnim == null) return;
+            if (idleVarietyClips == null || idleVarietyClips.Length == 0) return;
+
+            // After 15s idle, play a random variety animation
+            if (!playingVariety && Time.time - lastActionTime > idleVarietyInterval)
+            {
+                int idx = Random.Range(0, idleVarietyClips.Length);
+                string clipName = $"variety_{idx}";
+                if (legacyAnim.GetClip(clipName) != null)
+                {
+                    playingVariety = true;
+                    legacyAnim.CrossFade(clipName, 0.2f);
+                    StartCoroutine(ReturnToIdleAfterVariety(idleVarietyClips[idx].length));
+                }
+            }
+        }
+
+        IEnumerator ReturnToIdleAfterVariety(float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            if (legacyAnim != null && legacyAnim.GetClip("idle") != null)
+                legacyAnim.CrossFade("idle", 0.3f);
+            playingVariety = false;
+            lastActionTime = Time.time; // reset timer for next variety
+        }
+
+        void ResetIdleTimer()
+        {
+            lastActionTime = Time.time;
+            playingVariety = false;
+        }
+
         public void Attack()
         {
+            ResetIdleTimer();
             if (clipAnimReady && legacyAnim != null && legacyAnim.GetClip("attack") != null)
             {
                 legacyAnim.CrossFade("attack", 0.15f);
@@ -149,6 +182,7 @@ namespace CtfStage
 
         public void Hurt()
         {
+            ResetIdleTimer();
             if (clipAnimReady && legacyAnim != null && legacyAnim.GetClip("hurt") != null)
             {
                 legacyAnim.CrossFade("hurt", 0.15f);

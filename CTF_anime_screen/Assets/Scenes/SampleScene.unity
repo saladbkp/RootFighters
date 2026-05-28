@@ -285,10 +285,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5335f61cac42e4149a42bde1dd4cb124, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CtfStage.StageBootstrap
-  teamAModel: {fileID: 3521057543606230625, guid: 693d55eb2397e4a308660390aa341a53, type: 3}
-  teamBModel: {fileID: 3659736991398420435, guid: 07af03e85fea04f328f75238b0d7e7a9, type: 3}
+  teamAModel: {fileID: 0}
+  teamBModel: {fileID: 0}
   teamARotationFix: {x: 0, y: 0, z: 0}
   teamBRotationFix: {x: 0, y: 0, z: 0}
+  teamAPositionOffset: {x: 0, y: 0, z: 0}
+  teamBPositionOffset: {x: 0, y: 0, z: 0}
+  teamAScale: 0
+  teamBScale: 0
   teamSpacing: 4
   groundY: 0
   capsuleHeight: 1

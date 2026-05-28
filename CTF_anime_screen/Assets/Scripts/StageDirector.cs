@@ -31,11 +31,12 @@ namespace CtfStage
 
         [Header("Camera Zoom")]
         public float zoomCloseUpDist = 4.0f;      // how close the camera gets to attacker
-        public float zoomInDuration = 0.4f;        // time to zoom into attacker
-        public float attackHoldDuration = 0.8f;    // hold close-up during attack anim
-        public float zoomOutDuration = 0.5f;       // time to zoom back out
+        public float zoomInDuration = 0.8f;        // slow pan into attacker
+        public float attackHoldDuration = 1.2f;    // hold close-up during attack (in real time)
+        public float zoomOutDuration = 0.4f;       // normal speed zoom back
         public float screenShakeIntensity = 0.15f;
         public float screenShakeDuration = 0.3f;
+        public float slowMoScale = 0.3f;           // time scale during close-up (0.3 = 30% speed)
 
         StageClient client;
         StageScreens screens;
@@ -129,34 +130,39 @@ namespace CtfStage
         /// </summary>
         IEnumerator CinematicAttack(StageFighter atk, StageFighter def, CategoryInfo info)
         {
-            // === PHASE 1: ZOOM INTO ATTACKER ===
+            // === PHASE 1: SLOW-MO + ZOOM INTO ATTACKER ===
+            Time.timeScale = slowMoScale;
+            Time.fixedDeltaTime = 0.02f * slowMoScale;
+
             if (mainCam != null)
             {
                 Vector3 atkCenter = atk.transform.position + Vector3.up * impactHeight;
                 Vector3 dirToCam = (camRestPos - atkCenter).normalized;
                 Vector3 closeUpPos = atkCenter + dirToCam * zoomCloseUpDist;
-                // Look at the attacker
                 if (camCoroutine != null) StopCoroutine(camCoroutine);
-                camCoroutine = StartCoroutine(CameraMoveTo(closeUpPos, atkCenter, zoomInDuration));
+                // Camera moves in real-time (unscaled) so it's smooth even in slow-mo
+                camCoroutine = StartCoroutine(CameraMoveTo(closeUpPos, atkCenter, zoomInDuration, true));
             }
 
-            yield return new WaitForSeconds(zoomInDuration * 0.5f);
+            // Wait (real-time) for camera to arrive
+            yield return new WaitForSecondsRealtime(zoomInDuration * 0.6f);
 
-            // === PHASE 2: ATTACK ANIMATION (during close-up) ===
+            // === PHASE 2: ATTACK in slow-mo (the punch is visible!) ===
             atk.Attack();
 
-            // Hold close-up so the player can see the attack pose
-            yield return new WaitForSeconds(attackHoldDuration);
+            // Hold close-up in real-time so we can see the slow-mo punch
+            yield return new WaitForSecondsRealtime(attackHoldDuration);
 
-            // === PHASE 3: ZOOM OUT + FIRE PROJECTILE ===
-            // Start zooming back while the projectile flies
+            // === PHASE 3: RESTORE SPEED + ZOOM OUT + FIRE PROJECTILE ===
+            Time.timeScale = 1f;
+            Time.fixedDeltaTime = 0.02f;
+
             if (mainCam != null)
             {
                 if (camCoroutine != null) StopCoroutine(camCoroutine);
-                camCoroutine = StartCoroutine(CameraMoveTo(camRestPos, Vector3.up * impactHeight, zoomOutDuration));
+                camCoroutine = StartCoroutine(CameraMoveTo(camRestPos, Vector3.up * impactHeight, zoomOutDuration, false));
             }
 
-            // Small delay then fire projectile
             yield return new WaitForSeconds(0.15f);
 
             Vector3 from = atk.FistPosition;
@@ -172,7 +178,6 @@ namespace CtfStage
             proj.transform.localScale = Vector3.one * projectileSize;
             TintEmissive(proj.GetComponent<Renderer>(), info.color, info.glow);
 
-            // projectile trail
             var trail = proj.AddComponent<TrailRenderer>();
             trail.time = 0.3f;
             trail.startWidth = projectileSize * 0.8f;
@@ -198,7 +203,6 @@ namespace CtfStage
             StageVfx.PlaySignature(to, info.effect, info.color, info.glow);
             def.Hurt();
 
-            // Screen shake on impact
             if (mainCam != null)
             {
                 if (camCoroutine != null) StopCoroutine(camCoroutine);
@@ -230,7 +234,7 @@ namespace CtfStage
 
         // ================= Camera Effects ================= //
 
-        IEnumerator CameraMoveTo(Vector3 targetPos, Vector3 lookAt, float duration)
+        IEnumerator CameraMoveTo(Vector3 targetPos, Vector3 lookAt, float duration, bool useUnscaledTime = false)
         {
             Vector3 startPos = mainCam.transform.position;
             Quaternion startRot = mainCam.transform.rotation;
@@ -239,7 +243,7 @@ namespace CtfStage
             float t = 0f;
             while (t < duration)
             {
-                t += Time.deltaTime;
+                t += useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
                 float ease = EaseInOutQuad(Mathf.Clamp01(t / duration));
                 mainCam.transform.position = Vector3.Lerp(startPos, targetPos, ease);
                 mainCam.transform.rotation = Quaternion.Slerp(startRot, targetRot, ease);

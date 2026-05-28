@@ -119,6 +119,12 @@ namespace CtfStage
             }
         }
 
+        // --- Inject events directly (used by KeyboardDriver, no WebSocket needed) ---
+        public void InjectSolve(SolveData d)      { if (verboseLog) Debug.Log("[StageClient] inject SOLVE"); OnSolve?.Invoke(d); }
+        public void InjectMatchStart(MatchStartData d) { if (verboseLog) Debug.Log("[StageClient] inject MATCH_START"); OnMatchStart?.Invoke(d); }
+        public void InjectMatchEnd(MatchEndData d) { if (verboseLog) Debug.Log("[StageClient] inject MATCH_END"); OnMatchEnd?.Invoke(d); }
+        public void InjectWrong(WrongData d)       { if (verboseLog) Debug.Log("[StageClient] inject WRONG"); OnWrong?.Invoke(d); }
+
         async void OnApplicationQuit()
         {
             quitting = true;

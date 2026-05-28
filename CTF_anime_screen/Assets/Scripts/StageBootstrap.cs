@@ -96,14 +96,14 @@ namespace CtfStage
             }
 
             // Auto-load models from GLB paths if not assigned in Inspector
-            if (teamAModel == null) teamAModel = LoadModel("Assets/Models/Alien.fbx");
-            if (teamBModel == null) teamBModel = LoadModel("Assets/Models/Ninja.fbx");
+            if (teamAModel == null) teamAModel = LoadModel("Assets/Models/Ultimate Monsters/Big/FBX/Demon.fbx");
+            if (teamBModel == null) teamBModel = LoadModel("Assets/Models/Ultimate Monsters/Big/FBX/Ninja.fbx");
 
             StageFighter fA = BuildFighter("Fighter_A", -teamSpacing, +1, teamA, teamAModel, teamARotationFix, teamAPositionOffset, teamAScale);
-            AutoAssignClips(fA, teamAModel, "Idle", "Attack", "HitRecieve", "Win");
+            AutoAssignClips(fA, teamAModel, "Idle", "Punch", "HitReact", "Yes");
 
             StageFighter fB = BuildFighter("Fighter_B", +teamSpacing, -1, teamB, teamBModel, teamBRotationFix, teamBPositionOffset, teamBScale);
-            AutoAssignClips(fB, teamBModel, "Idle", "Attack", "HitRecieve", "Win");
+            AutoAssignClips(fB, teamBModel, "Idle", "Punch", "HitReact", "Yes");
 
             var stage = new GameObject("Stage");
             stage.AddComponent<StageClient>();               // connects on Start
@@ -112,8 +112,9 @@ namespace CtfStage
             director.teamB = fB;
             stage.AddComponent<StageAudio>();                // synth SFX + BGM
             stage.AddComponent<StageScreens>();              // standby / VS intro / HUD / result
+            stage.AddComponent<KeyboardDriver>();            // keyboard battle: 1-6 = A, ASDFG = B, N = restart
 
-            Debug.Log("[StageBootstrap] scene built. Run a backend and drive solves.");
+            Debug.Log("[StageBootstrap] scene built. Keys: 1-6 = Team A attack, A/S/D/F/G = Team B attack, N = restart");
         }
 
         // Instantiate a real model if provided, else a colored capsule. Either way
@@ -133,26 +134,29 @@ namespace CtfStage
                 float faceY = x > 0 ? -90f : 90f;
                 go.transform.Rotate(Vector3.up, faceY, Space.World);
 
-                // Scale: manual if set, otherwise auto-fit to 3m
-                if (manualScale > 0f)
-                {
-                    go.transform.localScale = Vector3.one * manualScale;
-                }
-                else
-                {
-                    go.transform.position = Vector3.zero;
-                    go.transform.localScale = Vector3.one;
-                    Bounds b = new Bounds(Vector3.zero, Vector3.zero);
-                    foreach (var r in go.GetComponentsInChildren<Renderer>(true))
-                        b.Encapsulate(r.bounds);
-                    float h = Mathf.Max(b.size.y, 0.01f);
-                    go.transform.localScale = Vector3.one * (3f / h);
-                }
+                // Scale: manual if set, otherwise auto-fit to targetHeight
+                float targetHeight = 3f;
+                go.transform.position = Vector3.zero;
+                go.transform.localScale = Vector3.one;
 
-                // Position: team X + manual offset
-                go.transform.position = new Vector3(x, groundY, 0f) + posOffset;
+                // Measure bounds at identity
+                Bounds b = new Bounds(Vector3.zero, Vector3.zero);
+                foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+                    b.Encapsulate(r.bounds);
 
-                Debug.Log($"[StageBootstrap] {name}: pos={go.transform.position}, scale={go.transform.localScale.x:F2}");
+                float scale = manualScale > 0f ? manualScale : targetHeight / Mathf.Max(b.size.y, 0.01f);
+                go.transform.localScale = Vector3.one * scale;
+
+                // Re-measure after scaling to get accurate foot position
+                Bounds sb = new Bounds(Vector3.zero, Vector3.zero);
+                foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+                    sb.Encapsulate(r.bounds);
+
+                // Align feet to groundY: shift so bounds.min.y == groundY
+                float feetOffset = groundY - sb.min.y;
+                go.transform.position = new Vector3(x, feetOffset, 0f) + posOffset;
+
+                Debug.Log($"[StageBootstrap] {name}: scale={scale:F2}, bounds.min.y={sb.min.y:F2}, feetOffset={feetOffset:F2}, finalPos={go.transform.position}");
 
                 // Only paint capsule fallbacks — imported models keep their own materials
                 // foreach (var r in go.GetComponentsInChildren<Renderer>(true))
@@ -242,34 +246,53 @@ namespace CtfStage
         }
 
         /// Auto-assign animation clips from the model's FBX by clip name.
-        /// FBX files contain multiple named clips (e.g. "Idle", "Bite_Front", "Death").
         static void AutoAssignClips(StageFighter fighter, GameObject model,
             string idleName, string attackName, string hurtName, string winName)
         {
             if (model == null) return;
 #if UNITY_EDITOR
-            string path = UnityEditor.AssetDatabase.GetAssetPath(model);
-            if (string.IsNullOrEmpty(path)) return;
-
-            var allAssets = UnityEditor.AssetDatabase.LoadAllAssetsAtPath(path);
-            if (allAssets == null) return;
-
             var clips = new System.Collections.Generic.Dictionary<string, AnimationClip>();
-            foreach (var obj in allAssets)
-            {
-                if (obj == null) continue;
-                if (obj is AnimationClip clip && !clip.name.StartsWith("__preview__"))
-                    clips[clip.name] = clip;
-            }
 
-            Debug.Log($"[StageBootstrap] {fighter.name}: found {clips.Count} clips in {path}: {string.Join(", ", clips.Keys)}");
+            string modelPath = UnityEditor.AssetDatabase.GetAssetPath(model);
+            if (!string.IsNullOrEmpty(modelPath))
+                GatherClips(modelPath, clips);
+
+            Debug.Log($"[StageBootstrap] {fighter.name}: found {clips.Count} clips: {string.Join(", ", clips.Keys)}");
 
             fighter.idleClip   = FindClip(clips, idleName);
             fighter.attackClip = FindClip(clips, attackName);
             fighter.hurtClip   = FindClip(clips, hurtName);
             fighter.winClip    = FindClip(clips, winName);
 
-            Debug.Log($"[StageBootstrap] {fighter.name}: idle={fighter.idleClip?.name}, attack={fighter.attackClip?.name}, hurt={fighter.hurtClip?.name}, win={fighter.winClip?.name}");
+            // Assign idle variety clips: Wave, Walk, Duck, No, Jump
+            var varietyNames = new string[] { "Wave", "Walk", "Duck", "No", "Jump" };
+            var varietyList = new System.Collections.Generic.List<AnimationClip>();
+            foreach (var vn in varietyNames)
+            {
+                var vc = FindClip(clips, vn);
+                if (vc != null) varietyList.Add(vc);
+            }
+            fighter.idleVarietyClips = varietyList.ToArray();
+
+            Debug.Log($"[StageBootstrap] {fighter.name}: idle={fighter.idleClip?.name}, attack={fighter.attackClip?.name}, hurt={fighter.hurtClip?.name}, win={fighter.winClip?.name}, variety={varietyList.Count}");
+#endif
+        }
+
+        /// Load all AnimationClips from an asset path into the dictionary
+        static void GatherClips(string assetPath, System.Collections.Generic.Dictionary<string, AnimationClip> clips)
+        {
+#if UNITY_EDITOR
+            var allAssets = UnityEditor.AssetDatabase.LoadAllAssetsAtPath(assetPath);
+            if (allAssets == null) return;
+            foreach (var obj in allAssets)
+            {
+                if (obj == null) continue;
+                if (obj is AnimationClip clip && !clip.name.StartsWith("__preview__"))
+                {
+                    if (!clips.ContainsKey(clip.name))
+                        clips[clip.name] = clip;
+                }
+            }
 #endif
         }
 

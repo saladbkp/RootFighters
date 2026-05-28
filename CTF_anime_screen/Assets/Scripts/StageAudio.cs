@@ -44,6 +44,13 @@ namespace CtfStage
         AudioClip wrongClip, hypeClip, winClip, bgmClip;
         readonly System.Random rng = new System.Random(1234);
 
+        // Real sound effect clips (loaded from Assets/Music/)
+        AudioClip sndFirstBlood, sndNormalKill, sndDoubleKill, sndTripleKill, sndGameStart, sndGameEnd;
+        int solveCount;
+        float lastSolveTime;
+        const float multiKillWindow = 5f; // seconds to count as multi-kill
+        int comboCount;
+
         // effect name -> sound character (parallels StageVfx.Specs)
         static readonly Dictionary<string, ToneSpec> Tones = new Dictionary<string, ToneSpec>
         {
@@ -74,8 +81,34 @@ namespace CtfStage
                 sfx[kv.Key] = Synth("sfx_" + kv.Key, kv.Value);
             wrongClip = Synth("sfx_wrong", WrongTone);
             hypeClip = Synth("sfx_hype", HypeTone);
-            winClip = SynthChord("sfx_win", new[] { 523.25f, 659.25f, 783.99f, 1046.5f }, 1.2f, 3f, 0.4f); // C-E-G-C
-            bgmClip = SynthPad("bgm_pad", new[] { 130.81f, 196f, 261.63f, 329.63f }, 4f, 0.18f);            // soft Cmaj drone
+            winClip = SynthChord("sfx_win", new[] { 523.25f, 659.25f, 783.99f, 1046.5f }, 1.2f, 3f, 0.4f);
+            bgmClip = SynthPad("bgm_pad", new[] { 130.81f, 196f, 261.63f, 329.63f }, 4f, 0.18f);
+
+            // Load real sound effects from Assets/Music/
+            LoadSoundEffects();
+        }
+
+        void LoadSoundEffects()
+        {
+#if UNITY_EDITOR
+            sndFirstBlood = LoadAudio("Assets/Music/first_blood.mp3");
+            sndNormalKill = LoadAudio("Assets/Music/normal kill.wav");
+            sndDoubleKill = LoadAudio("Assets/Music/double kill.wav");
+            sndTripleKill = LoadAudio("Assets/Music/thriple kill.wav");
+            sndGameStart = LoadAudio("Assets/Music/gamestart.wav");
+            sndGameEnd = LoadAudio("Assets/Music/game end.wav");
+
+            Debug.Log($"[StageAudio] Loaded sounds: firstBlood={sndFirstBlood != null}, normalKill={sndNormalKill != null}, doubleKill={sndDoubleKill != null}, tripleKill={sndTripleKill != null}, gameStart={sndGameStart != null}, gameEnd={sndGameEnd != null}");
+#endif
+        }
+
+        static AudioClip LoadAudio(string path)
+        {
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+#else
+            return null;
+#endif
         }
 
         void OnEnable()
@@ -83,6 +116,7 @@ namespace CtfStage
             client.OnSolve += HandleSolve;
             client.OnWrong += HandleWrong;
             client.OnAnnounce += HandleAnnounce;
+            client.OnMatchStart += HandleMatchStart;
             client.OnMatchEnd += HandleMatchEnd;
         }
 
@@ -91,6 +125,7 @@ namespace CtfStage
             client.OnSolve -= HandleSolve;
             client.OnWrong -= HandleWrong;
             client.OnAnnounce -= HandleAnnounce;
+            client.OnMatchStart -= HandleMatchStart;
             client.OnMatchEnd -= HandleMatchEnd;
         }
 
@@ -105,8 +140,38 @@ namespace CtfStage
         // --- event handlers ------------------------------------------------- //
         void HandleSolve(SolveData d)
         {
-            string fx = StageConfig.Cat(d.category).effect;
-            if (sfx.TryGetValue(fx, out var clip)) sfxSrc.PlayOneShot(clip, sfxVolume);
+            solveCount++;
+
+            // Multi-kill detection: solves within 5s window
+            if (Time.time - lastSolveTime < multiKillWindow)
+                comboCount++;
+            else
+                comboCount = 1;
+            lastSolveTime = Time.time;
+
+            // Play appropriate sound
+            if (solveCount == 1 && sndFirstBlood != null)
+            {
+                sfxSrc.PlayOneShot(sndFirstBlood, sfxVolume);
+            }
+            else if (comboCount >= 3 && sndTripleKill != null)
+            {
+                sfxSrc.PlayOneShot(sndTripleKill, sfxVolume);
+            }
+            else if (comboCount == 2 && sndDoubleKill != null)
+            {
+                sfxSrc.PlayOneShot(sndDoubleKill, sfxVolume);
+            }
+            else if (sndNormalKill != null)
+            {
+                sfxSrc.PlayOneShot(sndNormalKill, sfxVolume);
+            }
+            else
+            {
+                // Fallback to synth SFX
+                string fx = StageConfig.Cat(d.category).effect;
+                if (sfx.TryGetValue(fx, out var clip)) sfxSrc.PlayOneShot(clip, sfxVolume);
+            }
         }
 
         void HandleWrong(WrongData d) => sfxSrc.PlayOneShot(wrongClip, sfxVolume);
@@ -116,7 +181,22 @@ namespace CtfStage
             if (d.level == "hype") sfxSrc.PlayOneShot(hypeClip, sfxVolume);
         }
 
-        void HandleMatchEnd(MatchEndData d) => sfxSrc.PlayOneShot(winClip, sfxVolume);
+        void HandleMatchStart(MatchStartData d)
+        {
+            solveCount = 0;
+            comboCount = 0;
+            lastSolveTime = 0f;
+            if (sndGameStart != null)
+                sfxSrc.PlayOneShot(sndGameStart, sfxVolume);
+        }
+
+        void HandleMatchEnd(MatchEndData d)
+        {
+            if (sndGameEnd != null)
+                sfxSrc.PlayOneShot(sndGameEnd, sfxVolume);
+            else
+                sfxSrc.PlayOneShot(winClip, sfxVolume);
+        }
 
         // --- synthesis ------------------------------------------------------ //
         float WaveSample(Wave w, float phase01)

@@ -37,7 +37,14 @@ namespace CtfStage
         CanvasGroup attackBannerGroup;
         Text attackCategoryText, attackSubText;
         Image attackBannerBg, attackSlashLine;
+        Text wingTextL, wingTextR;    // wing decoration texts
+        Text attackGlowText;          // colored glow layer behind main text
+        Image diamondL, diamondR;     // diamond accents on slash lines
         Coroutine attackBannerCo;
+        // solve log (ranking feed)
+        Text solveLogText;
+        List<string> solveLogEntries = new List<string>();
+        const int maxLogEntries = 8;
 
         /// <summary>Invoked when the attack banner finishes its exit animation.</summary>
         public event System.Action OnAttackBannerDone;
@@ -90,6 +97,8 @@ namespace CtfStage
             if (d.teamB != null) bName.text = introB.text = d.teamB.name;
             aScore.text = bScore.text = "0";
             roundText.text = introRound.text = (d.round ?? "").ToUpper();
+            solveLogEntries.Clear();
+            UpdateSolveLogDisplay();
             HideStandby();
             StopAllCoroutines();
             resultGroup.alpha = 0f;
@@ -101,6 +110,7 @@ namespace CtfStage
             aScore.text = d.scoreA.ToString();
             bScore.text = d.scoreB.ToString();
             ShowAttackBanner(d.team, d.category);
+            AddSolveLog(d);
         }
 
         void HandleTimer(TimerData d)
@@ -164,6 +174,31 @@ namespace CtfStage
         void ShowStandby() { standbyGroup.alpha = 1f; }
         void HideStandby() { standbyGroup.alpha = 0f; }
 
+        // ================= SOLVE LOG (ranking feed) ================= //
+
+        void AddSolveLog(SolveData d)
+        {
+            string teamName = d.team == "A" ? aName.text : bName.text;
+            Color teamColor = d.team == "A" ? teamAColor : teamBColor;
+            string hex = ColorUtility.ToHtmlStringRGB(teamColor);
+            var info = StageConfig.Cat(d.category);
+            string catHex = ColorUtility.ToHtmlStringRGB(info.color);
+
+            string entry = $"<color=#{hex}>{teamName}</color>  <color=#{catHex}>✦ {d.category.ToUpper()}</color>  +{d.points}";
+            solveLogEntries.Insert(0, entry);
+
+            if (solveLogEntries.Count > maxLogEntries)
+                solveLogEntries.RemoveAt(solveLogEntries.Count - 1);
+
+            UpdateSolveLogDisplay();
+        }
+
+        void UpdateSolveLogDisplay()
+        {
+            if (solveLogText == null) return;
+            solveLogText.text = string.Join("\n", solveLogEntries);
+        }
+
         // ================= ATTACK BANNER (中二 style) ================= //
 
         static readonly Dictionary<string, string[]> AttackNames = new Dictionary<string, string[]>
@@ -189,12 +224,23 @@ namespace CtfStage
             if (!AttackNames.TryGetValue(category, out names))
                 names = new[] { category.ToUpper() + " ATTACK!", "— Skill Activated —" };
 
-            attackCategoryText.text = names[0];
+            attackCategoryText.text = $"⟨  {names[0]}  ⟩";
             attackCategoryText.color = info.color;
-            attackSubText.text = $"{teamName}  {names[1]}";
+            attackSubText.text = $"✦ {teamName}  {names[1]} ✦";
             attackSubText.color = teamCol;
             attackBannerBg.color = new Color(info.color.r * 0.15f, info.color.g * 0.15f, info.color.b * 0.15f, 0.85f);
             attackSlashLine.color = info.color;
+
+            // glow text mirrors main text
+            attackGlowText.text = attackCategoryText.text;
+            attackGlowText.color = new Color(info.color.r, info.color.g, info.color.b, 0.45f);
+
+            // tint wings & diamonds to category color
+            Color wingCol = new Color(info.color.r, info.color.g, info.color.b, 0.7f);
+            wingTextL.color = wingCol;
+            wingTextR.color = wingCol;
+            diamondL.color = info.color;
+            diamondR.color = info.color;
 
             if (attackBannerCo != null) StopCoroutine(attackBannerCo);
             attackBannerCo = StartCoroutine(AttackBannerSequence());
@@ -205,19 +251,26 @@ namespace CtfStage
             var catRT = attackCategoryText.rectTransform;
             var subRT = attackSubText.rectTransform;
             var slashRT = attackSlashLine.rectTransform;
+            var glowRT = attackGlowText.rectTransform;
+            var wlRT = wingTextL.rectTransform;
+            var wrRT = wingTextR.rectTransform;
 
-            // initial: off-screen
+            // initial: off-screen, wings collapsed
             attackBannerGroup.alpha = 0f;
             float catY = catRT.anchoredPosition.y;
             float subY = subRT.anchoredPosition.y;
             catRT.anchoredPosition = new Vector2(1200, catY);
             subRT.anchoredPosition = new Vector2(-1200, subY);
             slashRT.localScale = new Vector3(0f, 1f, 1f);
+            catRT.localScale = Vector3.one;
+            subRT.localScale = Vector3.one;
+            glowRT.localScale = Vector3.one * 1.08f;
+            wlRT.localScale = new Vector3(0f, 0.5f, 1f);
+            wrRT.localScale = new Vector3(0f, 0.5f, 1f);
 
-            // === PHASE 1: SLASH IN (1.5s) ===
+            // === PHASE 1: SLASH IN (fast) ===
             yield return Fade(attackBannerGroup, 1f, 0.1f);
 
-            // slide text in from sides (0.4s with overshoot)
             float dur = 0.4f;
             float t = 0f;
             while (t < dur)
@@ -227,36 +280,56 @@ namespace CtfStage
                 catRT.anchoredPosition = new Vector2(Mathf.Lerp(1200f, 0f, ease), catY);
                 subRT.anchoredPosition = new Vector2(Mathf.Lerp(-1200f, 0f, ease), subY);
                 slashRT.localScale = new Vector3(Mathf.Lerp(0f, 1f, ease), 1f, 1f);
+                // wings spread out with overshoot
+                float ws = Mathf.Lerp(0f, 1f, ease);
+                wlRT.localScale = new Vector3(ws, Mathf.Lerp(0.5f, 1f, ease), 1f);
+                wrRT.localScale = new Vector3(ws, Mathf.Lerp(0.5f, 1f, ease), 1f);
                 yield return null;
             }
 
             StartCoroutine(Pop(catRT, 1.25f, 0.25f));
 
-            // hold visible (1.5 - 0.1 - 0.4 = 1.0s)
-            yield return new WaitForSeconds(1.0f);
+            // === PHASE 2: HOLD briefly, then SCALE UP + gradual FADE OUT ===
+            yield return new WaitForSeconds(0.35f);
 
-            // === PHASE 2: SLASH OUT (1.5s) ===
             t = 0f;
-            dur = 0.5f;
+            dur = 1.2f; // slower exit so it doesn't vanish abruptly
             while (t < dur)
             {
                 t += Time.deltaTime;
                 float k = Mathf.Clamp01(t / dur);
-                float ease = k * k;
-                catRT.anchoredPosition = new Vector2(Mathf.Lerp(0f, -1400f, ease), catY);
-                subRT.anchoredPosition = new Vector2(Mathf.Lerp(0f, 1400f, ease), subY);
+                // smooth ease-in fade — starts gentle, accelerates at end
+                float fadeEase = Mathf.SmoothStep(0f, 1f, k);
+
+                float s = Mathf.Lerp(1f, 1.4f, k);
+                catRT.localScale = Vector3.one * s;
+                subRT.localScale = Vector3.one * s;
+
+                // glow layer scales slightly larger + fades faster
+                glowRT.localScale = Vector3.one * s * 1.08f;
+                attackGlowText.color = new Color(
+                    attackGlowText.color.r,
+                    attackGlowText.color.g,
+                    attackGlowText.color.b,
+                    Mathf.Lerp(0.45f, 0f, fadeEase));
+
+                // wings scale up + fade
+                float ws = Mathf.Lerp(1f, 1.5f, k);
+                wlRT.localScale = Vector3.one * ws;
+                wrRT.localScale = Vector3.one * ws;
+
+                attackBannerGroup.alpha = 1f - fadeEase;
                 slashRT.localScale = new Vector3(Mathf.Lerp(1f, 0f, k), 1f, 1f);
                 yield return null;
             }
 
-            yield return Fade(attackBannerGroup, 0f, 0.15f);
+            attackBannerGroup.alpha = 0f;
+            catRT.localScale = Vector3.one;
+            subRT.localScale = Vector3.one;
 
-            // brief dramatic pause before VFX
-            yield return new WaitForSeconds(0.85f);
+            yield return new WaitForSeconds(0.6f);
 
             attackBannerCo = null;
-
-            // banner done → NOW fire VFX
             OnAttackBannerDone?.Invoke();
         }
 
@@ -294,6 +367,25 @@ namespace CtfStage
             Place(bName, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-240, -52), new Vector2(520, 60));
             bScore = Label(canvas.transform, "0", 84, ink, TextAnchor.MiddleRight);
             Place(bScore, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-240, -120), new Vector2(420, 96));
+
+            // ---- solve log (bottom-center) ----
+            var logBgGo = new GameObject("SolveLogBg", typeof(RectTransform));
+            logBgGo.transform.SetParent(canvas.transform, false);
+            var logBgImg = logBgGo.AddComponent<Image>();
+            logBgImg.sprite = White();
+            logBgImg.color = new Color(0.02f, 0.01f, 0.04f, 0.6f);
+            var logBgRT = Place(logBgImg, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 140), new Vector2(480, 240));
+
+            solveLogText = Label(logBgGo.transform, "", 22, ink, TextAnchor.UpperCenter);
+            solveLogText.supportRichText = true;
+            solveLogText.lineSpacing = 1.4f;
+            solveLogText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            solveLogText.verticalOverflow = VerticalWrapMode.Truncate;
+            var logTextRT = solveLogText.rectTransform;
+            logTextRT.anchorMin = new Vector2(0f, 0f);
+            logTextRT.anchorMax = new Vector2(1f, 1f);
+            logTextRT.offsetMin = new Vector2(10f, 10f);
+            logTextRT.offsetMax = new Vector2(-10f, -10f);
 
             // ---- announce banner ----
             var bGo = new GameObject("Banner", typeof(RectTransform));
@@ -378,18 +470,66 @@ namespace CtfStage
             slash2RT.anchoredPosition = new Vector2(0, -50);
             slash2RT.sizeDelta = new Vector2(0, 3);
 
-            // category name (big, centered)
+            // category name (big, centered, italic-bold for drama)
             attackCategoryText = Label(atkGo.transform, "", 80, Color.white, TextAnchor.MiddleCenter);
+            attackCategoryText.fontStyle = FontStyle.BoldAndItalic;
             Place(attackCategoryText, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new Vector2(0, 10), new Vector2(1600, 110));
             var catOutline = attackCategoryText.gameObject.AddComponent<Outline>();
             catOutline.effectColor = new Color(0, 0, 0, 0.9f);
             catOutline.effectDistance = new Vector2(3, -3);
+            // add second outline for thicker border
+            var catOutline2 = attackCategoryText.gameObject.AddComponent<Outline>();
+            catOutline2.effectColor = new Color(0, 0, 0, 0.6f);
+            catOutline2.effectDistance = new Vector2(-2, 2);
+
+            // glow text layer (slightly larger, behind, blurred feel via bigger shadow)
+            attackGlowText = Label(atkGo.transform, "", 80, new Color(1, 1, 1, 0.45f), TextAnchor.MiddleCenter);
+            attackGlowText.fontStyle = FontStyle.BoldAndItalic;
+            Place(attackGlowText, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0, 10), new Vector2(1600, 110));
+            attackGlowText.rectTransform.localScale = Vector3.one * 1.08f;
+            // move glow behind main text
+            attackGlowText.transform.SetSiblingIndex(attackCategoryText.transform.GetSiblingIndex());
+
+            // === WING DECORATIONS (Unicode chars as Text) ===
+            wingTextL = Label(atkGo.transform, "<<  >>", 64, Color.white, TextAnchor.MiddleCenter);
+            wingTextL.fontStyle = FontStyle.Bold;
+            Place(wingTextL, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(-480, 10), new Vector2(200, 120));
+
+            wingTextR = Label(atkGo.transform, "<<  >>", 64, Color.white, TextAnchor.MiddleCenter);
+            wingTextR.fontStyle = FontStyle.Bold;
+            Place(wingTextR, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(480, 10), new Vector2(200, 120));
+
+            // === DIAMOND ACCENTS on slash lines ===
+            diamondL = MakeDiamond(atkGo.transform);
+            Place(diamondL, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(-380, 50), new Vector2(16, 16));
+            diamondL.rectTransform.localEulerAngles = new Vector3(0, 0, 45);
+
+            diamondR = MakeDiamond(atkGo.transform);
+            Place(diamondR, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(380, 50), new Vector2(16, 16));
+            diamondR.rectTransform.localEulerAngles = new Vector3(0, 0, 45);
 
             // subtitle (team name + flavor text)
             attackSubText = Label(atkGo.transform, "", 36, ink, TextAnchor.MiddleCenter);
+            attackSubText.fontStyle = FontStyle.Italic;
             Place(attackSubText, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new Vector2(0, -55), new Vector2(1400, 50));
+        }
+
+        /// <summary>Tiny diamond accent (rotated square).</summary>
+        Image MakeDiamond(Transform parent)
+        {
+            var go = new GameObject("Diamond", typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var img = go.AddComponent<Image>();
+            img.sprite = White();
+            img.color = Color.white;
+            return img;
         }
 
         CanvasGroup Overlay(string name, Color bg)

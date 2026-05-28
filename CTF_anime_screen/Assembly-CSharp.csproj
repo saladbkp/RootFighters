@@ -52,6 +52,7 @@
     <Compile Include="Assets/Scripts/StageProtocol.cs" />
     <Compile Include="Assets/UnityTechnologies/ParticlePack/Shared/Scripts/ProximityActivate.cs" />
     <Compile Include="Assets/Scripts/StageDirector.cs" />
+    <Compile Include="Assets/Scripts/KeyboardDriver.cs" />
     <Compile Include="Assets/Scripts/StageVfx.cs" />
     <Compile Include="Assets/Scripts/StageAudio.cs" />
     <Compile Include="Assets/Scripts/StageClient.cs" />
@@ -77,6 +78,7 @@
     <None Include="Assets/UnityTechnologies/ParticlePack/TextMesh Pro/Shaders/TMPro_Mobile.cginc" />
     <None Include="Assets/UnityTechnologies/ParticlePack/TextMesh Pro/Shaders/TMP_SDF SSD.shader" />
     <None Include="Assets/UnityTechnologies/ParticlePack/EffectExamples/Misc Effects/Prefabs/Readme_Dissolve_Respawn_.txt" />
+    <None Include="Assets/Models/Ultimate Monsters/License.txt" />
     <None Include="Assets/UnityTechnologies/ParticlePack/TextMesh Pro/Shaders/TMP_SDF-Surface-Mobile.shader" />
     <None Include="Assets/UnityTechnologies/ParticlePack/TextMesh Pro/Shaders/SDFFunctions.hlsl" />
     <None Include="Assets/UnityTechnologies/ParticlePack/EffectExamples/Magic Effects/Shaders/Ice.shader" />
