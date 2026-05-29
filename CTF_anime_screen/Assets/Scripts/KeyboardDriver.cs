@@ -117,7 +117,25 @@ namespace CtfStage
             var kb = Keyboard.current;
             if (kb == null) return;
 
-            if (inSetup && !inReveal)
+            if (inReveal) return;
+
+            // Ban phase: number keys 1-9 to select category to ban
+            // Must check BEFORE inSetup — ban phase starts from setup
+            if (inBanPhase)
+            {
+                for (int k = 0; k < 9; k++)
+                {
+                    Key key = k < 9 ? (Key)((int)Key.Digit1 + k) : Key.Digit0;
+                    if (k < allCategories.Length && kb[key].wasPressedThisFrame)
+                    {
+                        BanSelectCategory(k);
+                        return;
+                    }
+                }
+                return;
+            }
+
+            if (inSetup)
             {
                 // Tab to cycle between fields
                 if (kb[Key.Tab].wasPressedThisFrame)
@@ -143,21 +161,6 @@ namespace CtfStage
             }
 
             if (inReveal) return;
-
-            // Ban phase: number keys 1-9 to select category to ban
-            if (inBanPhase)
-            {
-                for (int k = 0; k < 9; k++)
-                {
-                    Key key = k < 9 ? (Key)((int)Key.Digit1 + k) : Key.Digit0;
-                    if (k < allCategories.Length && kb[key].wasPressedThisFrame)
-                    {
-                        BanSelectCategory(k);
-                        return;
-                    }
-                }
-                return;
-            }
 
             if (kb[Key.N].wasPressedThisFrame)
             {
@@ -418,8 +421,9 @@ namespace CtfStage
                 }
                 rt.localScale = Vector3.one;
 
-                // Pop effect after flip
+                // Pop effect after flip + particle burst
                 StartCoroutine(Pop(rt, 1.12f, 0.3f));
+                SpawnCardVfx(rt, pickedCategories[i]);
 
                 yield return new WaitForSeconds(1.2f);
             }
@@ -1254,6 +1258,64 @@ namespace CtfStage
                 yield return null;
             }
             rt.localScale = baseScale;
+        }
+
+        // ==================== CARD VFX ==================== //
+
+        void SpawnCardVfx(RectTransform cardRT, string category)
+        {
+            // Pick VFX prefab based on card color
+            string prefabPath = PickVfxPrefab(category);
+            GameObject prefab = null;
+
+#if UNITY_EDITOR
+            prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+#endif
+            if (prefab == null)
+                prefab = Resources.Load<GameObject>(System.IO.Path.GetFileNameWithoutExtension(prefabPath));
+
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[KeyboardDriver] VFX prefab not found: {prefabPath}");
+                return;
+            }
+
+            // Convert UI card position to world position
+            // For ScreenSpaceOverlay, use screen position → camera worldpoint
+            Vector3[] corners = new Vector3[4];
+            cardRT.GetWorldCorners(corners);
+            Vector3 center = (corners[0] + corners[2]) / 2f;
+
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                // Convert screen point to world point at a visible distance
+                Vector3 worldPos = cam.ScreenToWorldPoint(new Vector3(center.x, center.y, 5f));
+                var vfxGo = Instantiate(prefab, worldPos, Quaternion.identity);
+                vfxGo.transform.localScale = Vector3.one * 1.5f;
+                Destroy(vfxGo, 3f);
+            }
+        }
+
+        string PickVfxPrefab(string category)
+        {
+            // Red card categories → fire, Blue → ice/electric, Purple → magic
+            switch (category)
+            {
+                case "pwn":
+                case "crypto":
+                case "wifi":
+                case "b2r":
+                    return "Assets/JMO Assets/Cartoon FX Remaster/CFXR Prefabs/Fire/CFXR Fire.prefab";
+                case "web":
+                case "reverse":
+                case "osint":
+                    return "Assets/JMO Assets/Cartoon FX Remaster/CFXR Prefabs/Ice/CFXR3 Hit Ice B (Air).prefab";
+                case "forensics":
+                case "iot":
+                default:
+                    return "Assets/JMO Assets/Cartoon FX Remaster/CFXR Prefabs/Electric/CFXR3 Hit Electric C (Air).prefab";
+            }
         }
     }
 }
