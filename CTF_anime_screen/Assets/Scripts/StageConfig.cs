@@ -31,7 +31,7 @@ namespace CtfStage
             { "reverse",   C("reverse",   "Reverse",   "#3b82f6", "#9ec1ff", "gears")     }, // blue
             { "forensics", C("forensics", "Forensics", "#a64bff", "#d3a6ff", "psychic")   }, // purple
             { "crypto",    C("crypto",    "Crypto",    "#ff8c00", "#ffc46b", "vortex")    }, // orange
-            { "iot",       C("iot",       "IoT",       "#202028", "#7b5cff", "shadow")    }, // black (purple rim)
+            { "iot",       C("iot",       "IoT",       "#7b5cff", "#b49cff", "shadow")    }, // purple-blue
             { "osint",     C("osint",     "OSINT",     "#ffffff", "#bfe9ff", "flash")     }, // white
             { "b2r",       C("b2r",       "B2R",       "#ffd700", "#fff0a0", "root")      }, // gold (9th)
         };

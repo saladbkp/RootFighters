@@ -52,9 +52,10 @@ namespace CtfStage
 
         // Card reveal UI
         CanvasGroup revealGroup;
-        Image[] cardBgs = new Image[3];
-        Text[] cardTexts = new Text[3];
-        Image[] cardIcons = new Image[3];
+        Image[] cardBgs;
+        Text[] cardTexts;
+        Image[] cardIcons;
+        Transform revealCardParent; // parent for dynamically created cards
         Text revealTitle;
         string[] pickedCategories;
 
@@ -304,6 +305,9 @@ namespace CtfStage
                 pool.RemoveAt(idx);
             }
 
+            // Build the correct number of card UI slots
+            BuildRevealCards(numCards);
+
             inReveal = true;
             StartCoroutine(RevealSequence());
         }
@@ -319,7 +323,8 @@ namespace CtfStage
             revealTitle.color = new Color(0.93f, 0.94f, 1f);
 
             // Reset all cards to back face (hidden)
-            for (int i = 0; i < 3; i++)
+            int cardCount = pickedCategories.Length;
+            for (int i = 0; i < cardCount; i++)
             {
                 cardBgs[i].sprite = sprBackCard ?? White();
                 cardBgs[i].color = Color.white;
@@ -332,8 +337,7 @@ namespace CtfStage
             yield return new WaitForSeconds(0.5f);
 
             // Reveal each card one by one
-            int cardsToReveal = Mathf.Min(3, pickedCategories.Length);
-            for (int i = 0; i < cardsToReveal; i++)
+            for (int i = 0; i < cardCount; i++)
             {
                 // Play ban sound (louder than roll) for each card flip
                 if (banClip != null && banSrc != null) banSrc.PlayOneShot(banClip, 1f);
@@ -1081,14 +1085,50 @@ namespace CtfStage
             Place(revealTitle, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new Vector2(0, 240), new Vector2(1000, 90));
 
-            // 3 category cards side by side
-            for (int i = 0; i < 3; i++)
-            {
-                float xOffset = (i - 1) * 580; // -580, 0, +580
+            // Card parent (cards created dynamically based on count)
+            var cardParent = new GameObject("CardParent", typeof(RectTransform));
+            cardParent.transform.SetParent(go.transform, false);
+            Stretch((RectTransform)cardParent.transform);
+            revealCardParent = cardParent.transform;
+        }
 
-                // Card image (shows back_card initially, front on reveal)
+        void BuildRevealCards(int count)
+        {
+            // Destroy old cards
+            if (revealCardParent != null)
+            {
+                for (int c = revealCardParent.childCount - 1; c >= 0; c--)
+                    Destroy(revealCardParent.GetChild(c).gameObject);
+            }
+
+            cardBgs = new Image[count];
+            cardTexts = new Text[count];
+            cardIcons = new Image[count];
+
+            // Layout: scale card size based on count to fit screen
+            float cardW, cardH, spacing;
+            if (count <= 3)
+            {
+                cardW = 520; cardH = 780; spacing = 580;
+            }
+            else if (count <= 5)
+            {
+                cardW = 340; cardH = 510; spacing = 370;
+            }
+            else
+            {
+                cardW = 280; cardH = 420; spacing = 310;
+            }
+
+            float totalWidth = (count - 1) * spacing;
+            float startX = -totalWidth / 2f;
+
+            for (int i = 0; i < count; i++)
+            {
+                float xOffset = startX + i * spacing;
+
                 var cardGo = new GameObject($"Card{i}", typeof(RectTransform));
-                cardGo.transform.SetParent(go.transform, false);
+                cardGo.transform.SetParent(revealCardParent, false);
                 var cardImg = cardGo.AddComponent<Image>();
                 cardImg.sprite = sprBackCard ?? White();
                 cardImg.type = Image.Type.Simple;
@@ -1099,10 +1139,10 @@ namespace CtfStage
                 cardRT.anchorMax = new Vector2(0.5f, 0.5f);
                 cardRT.pivot = new Vector2(0.5f, 0.5f);
                 cardRT.anchoredPosition = new Vector2(xOffset, -10);
-                cardRT.sizeDelta = new Vector2(520, 780);
+                cardRT.sizeDelta = new Vector2(cardW, cardH);
                 cardBgs[i] = cardImg;
 
-                // Diamond icon (subtle, behind text)
+                // Diamond icon
                 var iconGo = new GameObject("Icon", typeof(RectTransform));
                 iconGo.transform.SetParent(cardGo.transform, false);
                 var iconImg = iconGo.AddComponent<Image>();
@@ -1113,19 +1153,21 @@ namespace CtfStage
                 iconRT.anchorMax = new Vector2(0.5f, 0.5f);
                 iconRT.pivot = new Vector2(0.5f, 0.5f);
                 iconRT.anchoredPosition = new Vector2(0, 20);
-                iconRT.sizeDelta = new Vector2(160, 160);
+                iconRT.sizeDelta = new Vector2(120, 120);
                 iconRT.localEulerAngles = new Vector3(0, 0, 45);
                 cardIcons[i] = iconImg;
 
-                // Category name text (overlaid on card)
-                var catText = MakeLabel(cardGo.transform, "", 58,
+                // Category name text
+                int fontSize = count <= 3 ? 58 : count <= 5 ? 42 : 34;
+                var catText = MakeLabel(cardGo.transform, "", fontSize,
                     new Color(1, 1, 1, 0), TextAnchor.MiddleCenter);
                 catText.fontStyle = FontStyle.BoldAndItalic;
                 var catOutline = catText.gameObject.AddComponent<Outline>();
                 catOutline.effectColor = new Color(0, 0, 0, 0.85f);
                 catOutline.effectDistance = new Vector2(3, -3);
+                float textY = count <= 3 ? -240 : count <= 5 ? -160 : -130;
                 Place(catText, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                    new Vector2(0, -240), new Vector2(400, 80));
+                    new Vector2(0, textY), new Vector2(300, 60));
                 cardTexts[i] = catText;
             }
         }
@@ -1252,58 +1294,88 @@ namespace CtfStage
 
         void SpawnCardVfx(RectTransform cardRT, string category)
         {
-            // Pick VFX prefab based on card color
-            string prefabPath = PickVfxPrefab(category);
-            GameObject prefab = null;
-
-#if UNITY_EDITOR
-            prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-#endif
-            if (prefab == null)
-                prefab = Resources.Load<GameObject>(System.IO.Path.GetFileNameWithoutExtension(prefabPath));
-
-            if (prefab == null)
-            {
-                Debug.LogWarning($"[KeyboardDriver] VFX prefab not found: {prefabPath}");
-                return;
-            }
-
-            // Convert UI card position to world position
-            // For ScreenSpaceOverlay, use screen position → camera worldpoint
-            Vector3[] corners = new Vector3[4];
-            cardRT.GetWorldCorners(corners);
-            Vector3 center = (corners[0] + corners[2]) / 2f;
-
-            Camera cam = Camera.main;
-            if (cam != null)
-            {
-                // Convert screen point to world point at a visible distance
-                Vector3 worldPos = cam.ScreenToWorldPoint(new Vector3(center.x, center.y, 5f));
-                var vfxGo = Instantiate(prefab, worldPos, Quaternion.identity);
-                vfxGo.transform.localScale = Vector3.one * 1.5f;
-                Destroy(vfxGo, 3f);
-            }
+            var info = StageConfig.Cat(category);
+            StartCoroutine(CardGlowBurst(cardRT, info.color));
         }
 
-        string PickVfxPrefab(string category)
+        IEnumerator CardGlowBurst(RectTransform cardRT, Color catColor)
         {
-            // Red card categories → fire, Blue → ice/electric, Purple → magic
-            switch (category)
+            // Create expanding glow ring behind the card
+            var glowGo = new GameObject("GlowBurst", typeof(RectTransform));
+            glowGo.transform.SetParent(cardRT.parent, false);
+            glowGo.transform.SetSiblingIndex(cardRT.GetSiblingIndex()); // behind card
+            var glowImg = glowGo.AddComponent<Image>();
+            glowImg.sprite = White();
+            glowImg.color = new Color(catColor.r, catColor.g, catColor.b, 0.8f);
+            var glowRT = (RectTransform)glowGo.transform;
+            glowRT.anchorMin = cardRT.anchorMin;
+            glowRT.anchorMax = cardRT.anchorMax;
+            glowRT.pivot = cardRT.pivot;
+            glowRT.anchoredPosition = cardRT.anchoredPosition;
+            glowRT.sizeDelta = cardRT.sizeDelta;
+
+            // Also create sparkle particles (small squares that fly outward)
+            int sparkCount = 12;
+            var sparks = new RectTransform[sparkCount];
+            var sparkDirs = new Vector2[sparkCount];
+            for (int s = 0; s < sparkCount; s++)
             {
-                case "pwn":
-                case "crypto":
-                case "wifi":
-                case "b2r":
-                    return "Assets/JMO Assets/Cartoon FX Remaster/CFXR Prefabs/Fire/CFXR Fire.prefab";
-                case "web":
-                case "reverse":
-                case "osint":
-                    return "Assets/JMO Assets/Cartoon FX Remaster/CFXR Prefabs/Ice/CFXR3 Hit Ice B (Air).prefab";
-                case "forensics":
-                case "iot":
-                default:
-                    return "Assets/JMO Assets/Cartoon FX Remaster/CFXR Prefabs/Electric/CFXR3 Hit Electric C (Air).prefab";
+                var spk = new GameObject("Spark", typeof(RectTransform));
+                spk.transform.SetParent(cardRT.parent, false);
+                var spkImg = spk.AddComponent<Image>();
+                spkImg.sprite = White();
+                float hueShift = Random.Range(-0.05f, 0.05f);
+                Color.RGBToHSV(catColor, out float h, out float sv, out float v);
+                spkImg.color = Color.HSVToRGB(h + hueShift, sv * 0.7f, Mathf.Min(v * 1.3f, 1f));
+                var spkRT = (RectTransform)spk.transform;
+                spkRT.anchorMin = new Vector2(0.5f, 0.5f);
+                spkRT.anchorMax = new Vector2(0.5f, 0.5f);
+                spkRT.pivot = new Vector2(0.5f, 0.5f);
+                spkRT.anchoredPosition = cardRT.anchoredPosition;
+                float size = Random.Range(8f, 20f);
+                spkRT.sizeDelta = new Vector2(size, size);
+                spkRT.localEulerAngles = new Vector3(0, 0, Random.Range(0f, 360f));
+                sparks[s] = spkRT;
+                float angle = (360f / sparkCount) * s + Random.Range(-15f, 15f);
+                sparkDirs[s] = new Vector2(
+                    Mathf.Cos(angle * Mathf.Deg2Rad),
+                    Mathf.Sin(angle * Mathf.Deg2Rad)
+                ) * Random.Range(300f, 600f);
             }
+
+            // Animate: glow expands + fades, sparks fly outward
+            float dur = 0.8f;
+            float t = 0f;
+            Vector2 baseSize = cardRT.sizeDelta;
+            Vector2 basePos = cardRT.anchoredPosition;
+
+            while (t < dur)
+            {
+                t += Time.deltaTime;
+                float k = t / dur;
+
+                // Glow expands and fades
+                float scale = 1f + k * 0.6f;
+                glowRT.sizeDelta = baseSize * scale;
+                glowImg.color = new Color(catColor.r, catColor.g, catColor.b, 0.8f * (1f - k));
+
+                // Sparks fly outward and fade
+                for (int s = 0; s < sparkCount; s++)
+                {
+                    if (sparks[s] == null) continue;
+                    sparks[s].anchoredPosition = basePos + sparkDirs[s] * k;
+                    var img = sparks[s].GetComponent<Image>();
+                    if (img != null) img.color = new Color(img.color.r, img.color.g, img.color.b, 1f - k);
+                    sparks[s].sizeDelta *= 0.995f; // slowly shrink
+                }
+
+                yield return null;
+            }
+
+            // Cleanup
+            Destroy(glowGo);
+            for (int s = 0; s < sparkCount; s++)
+                if (sparks[s] != null) Destroy(sparks[s].gameObject);
         }
     }
 }
