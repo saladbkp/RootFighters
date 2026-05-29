@@ -149,29 +149,19 @@ namespace CtfStage
                 comboCount = 1;
             lastSolveTime = Time.time;
 
-            // Play appropriate sound
+            // Always play category attack SFX (the hit sound)
+            string fx = StageConfig.Cat(d.category).effect;
+            if (sfx.TryGetValue(fx, out var clip)) sfxSrc.PlayOneShot(clip, sfxVolume);
+
+            // Additionally play kill announcement overlay
             if (solveCount == 1 && sndFirstBlood != null)
-            {
                 sfxSrc.PlayOneShot(sndFirstBlood, sfxVolume);
-            }
             else if (comboCount >= 3 && sndTripleKill != null)
-            {
                 sfxSrc.PlayOneShot(sndTripleKill, sfxVolume);
-            }
             else if (comboCount == 2 && sndDoubleKill != null)
-            {
                 sfxSrc.PlayOneShot(sndDoubleKill, sfxVolume);
-            }
             else if (sndNormalKill != null)
-            {
                 sfxSrc.PlayOneShot(sndNormalKill, sfxVolume);
-            }
-            else
-            {
-                // Fallback to synth SFX
-                string fx = StageConfig.Cat(d.category).effect;
-                if (sfx.TryGetValue(fx, out var clip)) sfxSrc.PlayOneShot(clip, sfxVolume);
-            }
         }
 
         void HandleWrong(WrongData d) => sfxSrc.PlayOneShot(wrongClip, sfxVolume);

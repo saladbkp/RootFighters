@@ -4,41 +4,44 @@ namespace CtfStage
 {
     /// <summary>
     /// One-component scene builder. Add this to a single empty GameObject and press
-    /// Play — it creates the camera, light, ground, two fighters, and wires up
-    /// StageClient + StageDirector + StageAudio. Run a backend (game_server.py) and
-    /// drive solves to see attacks fly.
-    ///
-    /// To use real characters: make a prefab from your VRoid/FBX model, put a
-    /// StageFighter on it (assign Animator + a hand bone as FistPoint), and drop it
-    /// into Team A Model / Team B Model below. Empty slots fall back to capsules.
+    /// Play — it creates the camera, light, ground, four fighters (2v2v2v2 FFA),
+    /// and wires up StageClient + StageDirector + StageAudio. Run a backend
+    /// (game_server.py) and drive solves to see attacks fly.
     /// </summary>
     public class StageBootstrap : MonoBehaviour
     {
         [Header("Characters (optional — empty = placeholder capsules)")]
         public GameObject teamAModel;
         public GameObject teamBModel;
+        public GameObject teamCModel;
+        public GameObject teamDModel;
 
         [Header("Model Rotation Fix (per-model, tweak in Inspector)")]
         public Vector3 teamARotationFix = new Vector3(0f, 0f, 0f);
         public Vector3 teamBRotationFix = new Vector3(0f, 0f, 0f);
+        public Vector3 teamCRotationFix = new Vector3(0f, 0f, 0f);
+        public Vector3 teamDRotationFix = new Vector3(0f, 0f, 0f);
 
         [Header("Model Position & Scale Override")]
-        [Tooltip("Manual position offset for Team A")]
         public Vector3 teamAPositionOffset = Vector3.zero;
-        [Tooltip("Manual position offset for Team B")]
         public Vector3 teamBPositionOffset = Vector3.zero;
-        [Tooltip("Manual scale override (0 = auto 3m)")]
+        public Vector3 teamCPositionOffset = Vector3.zero;
+        public Vector3 teamDPositionOffset = Vector3.zero;
         public float teamAScale = 0f;
         public float teamBScale = 0f;
+        public float teamCScale = 0f;
+        public float teamDScale = 0f;
 
         [Header("Layout")]
-        public float teamSpacing = 4f;     // fighters at x = ±teamSpacing
+        public float teamSpacing = 6f;     // wider spread for 4-team
         public float groundY = 0f;
         public float capsuleHeight = 1f;
 
         [Header("Placeholder colors")]
-        public Color teamA = new Color(0.20f, 0.84f, 1f);   // cyan  (#33d6ff)
-        public Color teamB = new Color(1f, 0.31f, 0.85f);   // magenta (#ff4fd8)
+        public Color teamA = new Color(0.20f, 0.84f, 1f);   // cyan
+        public Color teamB = new Color(1f, 0.31f, 0.85f);   // magenta
+        public Color teamC = new Color(0.22f, 1f, 0.08f);   // green
+        public Color teamD = new Color(1f, 0.65f, 0f);       // orange
         public Color ground = new Color(0.03f, 0.02f, 0.06f);
         public Color sky = new Color(0.015f, 0.01f, 0.04f);
 
@@ -85,7 +88,7 @@ namespace CtfStage
 
             BuildCamera();
             BuildLight();
-            StageEnvironment.Build(teamA, teamB, teamSpacing, groundY, sky);
+            StageEnvironment.Build(teamA, teamB, teamSpacing, groundY, sky, teamC, teamD);
 
             // Spawn environment prefab if provided (e.g. Church from Colonial City pack)
             if (environmentPrefab != null)
@@ -95,34 +98,51 @@ namespace CtfStage
                 env.transform.localScale = Vector3.one * environmentScale;
             }
 
-            // Auto-load models from GLB paths if not assigned in Inspector
+            // Auto-load models from FBX paths if not assigned in Inspector
             if (teamAModel == null) teamAModel = LoadModel("Assets/Models/Ultimate Monsters/Big/FBX/Demon.fbx");
             if (teamBModel == null) teamBModel = LoadModel("Assets/Models/Ultimate Monsters/Big/FBX/Ninja.fbx");
+            if (teamCModel == null) teamCModel = LoadModel("Assets/Models/Ultimate Monsters/Big/FBX/Orc.fbx");
+            if (teamDModel == null) teamDModel = LoadModel("Assets/Models/Ultimate Monsters/Big/FBX/Yeti.fbx");
 
-            StageFighter fA = BuildFighter("Fighter_A", -teamSpacing, +1, teamA, teamAModel, teamARotationFix, teamAPositionOffset, teamAScale);
+            // 4-corner diamond layout filling the screen
+            // 1(back-left)  3(back-right)   — further from camera
+            // 2(front-left)  4(front-right)  — closer to camera
+            float xSpread = teamSpacing;
+            float zBack = teamSpacing * 0.8f;   // back row z
+            float zFront = -teamSpacing * 0.4f; // front row z (closer to camera)
+
+            StageFighter fA = BuildFighter("Fighter_A", -xSpread * 0.7f, zBack, +1, teamA, teamAModel, teamARotationFix, teamAPositionOffset, teamAScale);
             AutoAssignClips(fA, teamAModel, "Idle", "Punch", "HitReact", "Yes");
 
-            StageFighter fB = BuildFighter("Fighter_B", +teamSpacing, -1, teamB, teamBModel, teamBRotationFix, teamBPositionOffset, teamBScale);
+            StageFighter fC = BuildFighter("Fighter_C", -xSpread, zFront, +1, teamC, teamCModel, teamCRotationFix, teamCPositionOffset, teamCScale);
+            AutoAssignClips(fC, teamCModel, "Idle", "Punch", "HitReact", "Yes");
+
+            StageFighter fB = BuildFighter("Fighter_B", +xSpread * 0.7f, zBack, -1, teamB, teamBModel, teamBRotationFix, teamBPositionOffset, teamBScale);
             AutoAssignClips(fB, teamBModel, "Idle", "Punch", "HitReact", "Yes");
 
+            StageFighter fD = BuildFighter("Fighter_D", +xSpread, zFront, -1, teamD, teamDModel, teamDRotationFix, teamDPositionOffset, teamDScale);
+            AutoAssignClips(fD, teamDModel, "Idle", "Punch", "HitReact", "Yes");
+
             var stage = new GameObject("Stage");
-            stage.AddComponent<StageClient>();               // connects on Start
+            stage.AddComponent<StageClient>();
             var director = stage.AddComponent<StageDirector>();
             director.teamA = fA;
             director.teamB = fB;
-            stage.AddComponent<StageAudio>();                // synth SFX + BGM
-            stage.AddComponent<StageScreens>();              // standby / VS intro / HUD / result
-            stage.AddComponent<KeyboardDriver>();            // keyboard battle: 1-6 = A, ASDFG = B, N = restart
+            director.teamC = fC;
+            director.teamD = fD;
+            stage.AddComponent<StageAudio>();
+            stage.AddComponent<StageScreens>();
+            stage.AddComponent<KeyboardDriver>();
 
-            Debug.Log("[StageBootstrap] scene built. Keys: 1-6 = Team A attack, A/S/D/F/G = Team B attack, N = restart");
+            Debug.Log("[StageBootstrap] 4-team FFA scene built. Keys: 1-6=A, ASDFG=B, ZXCV=C, 7890=D, N=restart");
         }
 
         // Instantiate a real model if provided, else a colored capsule. Either way
         // returns a configured StageFighter facing the center.
-        StageFighter BuildFighter(string name, float x, int facing, Color color, GameObject model,
+        StageFighter BuildFighter(string name, float x, float z, int facing, Color color, GameObject model,
             Vector3 rotFix = default, Vector3 posOffset = default, float manualScale = 0f)
         {
-            Vector3 pos = new Vector3(x, groundY, 0f);
+            Vector3 pos = new Vector3(x, groundY, z);
 
             if (model != null)
             {
@@ -154,7 +174,7 @@ namespace CtfStage
 
                 // Align feet to groundY: shift so bounds.min.y == groundY
                 float feetOffset = groundY - sb.min.y;
-                go.transform.position = new Vector3(x, feetOffset, 0f) + posOffset;
+                go.transform.position = new Vector3(x, feetOffset, z) + posOffset;
 
                 Debug.Log($"[StageBootstrap] {name}: scale={scale:F2}, bounds.min.y={sb.min.y:F2}, feetOffset={feetOffset:F2}, finalPos={go.transform.position}");
 
@@ -176,7 +196,7 @@ namespace CtfStage
 
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.name = name;
-            body.transform.position = new Vector3(x, groundY + capsuleHeight, 0f);
+            body.transform.position = new Vector3(x, groundY + capsuleHeight, z);
             Paint(body.GetComponent<Renderer>(), color, color * 1.5f);
             var col = body.GetComponent<Collider>();
             if (col != null) Destroy(col);
@@ -202,7 +222,7 @@ namespace CtfStage
                 go.AddComponent<AudioListener>();
             }
             cam.transform.position = new Vector3(0f, 4f, -11f);
-            cam.transform.LookAt(new Vector3(0f, groundY + 1f, 0f));
+            cam.transform.LookAt(new Vector3(0f, groundY + 1f, 1f));
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = sky;
             cam.fieldOfView = 50f;

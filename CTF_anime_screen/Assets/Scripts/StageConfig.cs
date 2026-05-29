@@ -42,10 +42,22 @@ namespace CtfStage
             return new CategoryInfo { key = key, label = key, color = Color.gray, glow = Color.white, effect = "flash" };
         }
 
-        // Team identity (left = A, right = B). Move colors come from the category.
+        // Team identity (A/B/C/D). Move colors come from the category.
         public static readonly Color TeamAColor = Hex("#33d6ff"); // cyan
         public static readonly Color TeamBColor = Hex("#ff4fd8"); // magenta
+        public static readonly Color TeamCColor = Hex("#39ff14"); // green
+        public static readonly Color TeamDColor = Hex("#ffa500"); // orange
 
-        public static Color TeamColor(string side) => side == "A" ? TeamAColor : TeamBColor;
+        public static Color TeamColor(string side)
+        {
+            switch (side)
+            {
+                case "A": return TeamAColor;
+                case "B": return TeamBColor;
+                case "C": return TeamCColor;
+                case "D": return TeamDColor;
+                default:  return Color.white;
+            }
+        }
     }
 }

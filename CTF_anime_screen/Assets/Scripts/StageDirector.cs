@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace CtfStage
@@ -22,6 +23,8 @@ namespace CtfStage
         [Header("Fighters (auto-set by StageBootstrap if empty)")]
         public StageFighter teamA;
         public StageFighter teamB;
+        public StageFighter teamC;
+        public StageFighter teamD;
 
         [Header("Tuning")]
         public float projectileSeconds = 0.35f;
@@ -88,12 +91,34 @@ namespace CtfStage
             client.OnMatchEnd -= HandleEnd;
         }
 
+        StageFighter GetFighter(string team)
+        {
+            switch (team)
+            {
+                case "A": return teamA;
+                case "B": return teamB;
+                case "C": return teamC;
+                case "D": return teamD;
+                default:  return null;
+            }
+        }
+
+        StageFighter PickRandomDefender(string attackerTeam)
+        {
+            var others = new List<StageFighter>();
+            if (attackerTeam != "A" && teamA != null) others.Add(teamA);
+            if (attackerTeam != "B" && teamB != null) others.Add(teamB);
+            if (attackerTeam != "C" && teamC != null) others.Add(teamC);
+            if (attackerTeam != "D" && teamD != null) others.Add(teamD);
+            if (others.Count == 0) return null;
+            return others[Random.Range(0, others.Count)];
+        }
+
         void HandleSolve(SolveData d)
         {
             var info = StageConfig.Cat(d.category);
-            bool aAttacks = d.team == "A";
-            StageFighter atk = aAttacks ? teamA : teamB;
-            StageFighter def = aAttacks ? teamB : teamA;
+            StageFighter atk = GetFighter(d.team);
+            StageFighter def = PickRandomDefender(d.team);
             if (atk == null || def == null) return;
 
             // queue the attack — banner plays first, then FireQueuedAttack runs
@@ -212,7 +237,7 @@ namespace CtfStage
 
         void HandleWrong(WrongData d)
         {
-            StageFighter who = d.team == "A" ? teamA : teamB;
+            StageFighter who = GetFighter(d.team);
             if (who == null) return;
             who.Hurt();
             StageVfx.PlayBurst(who.FistPosition, StageVfx.SpecFor("miss"),
@@ -228,8 +253,8 @@ namespace CtfStage
 
         void HandleEnd(MatchEndData d)
         {
-            if (d.winner == "A" && teamA != null) teamA.Win();
-            else if (d.winner == "B" && teamB != null) teamB.Win();
+            var winner = GetFighter(d.winner);
+            if (winner != null) winner.Win();
         }
 
         // ================= Camera Effects ================= //

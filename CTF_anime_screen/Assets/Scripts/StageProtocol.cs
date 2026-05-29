@@ -42,6 +42,8 @@ namespace CtfStage
         public string round;
         public TeamRef teamA;
         public TeamRef teamB;
+        public TeamRef teamC;   // null in 2v2 mode
+        public TeamRef teamD;   // null in 2v2 mode
         public int durationSec;
         public string[] bannedCategories;
     }
@@ -51,12 +53,14 @@ namespace CtfStage
     [Serializable]
     public class SolveData
     {
-        public string team;             // "A" | "B"
+        public string team;             // "A" | "B" | "C" | "D"
         public string category;         // canonical key (see StageConfig)
         public string challenge;
         public int points;
         public int scoreA;
         public int scoreB;
+        public int scoreC;
+        public int scoreD;
         public int solveCount;
     }
     [Serializable] public class SolveMsg { public SolveData data; }
@@ -78,7 +82,15 @@ namespace CtfStage
 
     // ---- MATCH_END ---------------------------------------------------------- //
     [Serializable]
-    public class MatchEndData { public string winner; public int scoreA; public int scoreB; public string reason; }
+    public class MatchEndData
+    {
+        public string winner;   // "A" | "B" | "C" | "D" | "DRAW"
+        public int scoreA;
+        public int scoreB;
+        public int scoreC;
+        public int scoreD;
+        public string reason;
+    }
     [Serializable] public class MatchEndMsg { public MatchEndData data; }
 
     // ---- ANNOUNCE ----------------------------------------------------------- //

@@ -24,14 +24,19 @@ namespace CtfStage
 
         readonly Color teamAColor = StageConfig.TeamAColor;
         readonly Color teamBColor = StageConfig.TeamBColor;
+        readonly Color teamCColor = StageConfig.TeamCColor;
+        readonly Color teamDColor = StageConfig.TeamDColor;
         readonly Color ink = new Color(0.93f, 0.94f, 1f);
 
         // HUD
-        Text aName, aScore, bName, bScore, roundText, timerText, bannerText;
+        Text aName, aScore, bName, bScore, cName, cScore, dName, dScore;
+        Text aFlags, bFlags, cFlags, dFlags; // 🚩 per-solve flag counters
+        Text roundText, timerText, bannerText;
         CanvasGroup bannerGroup;
+        int[] solveCounts = new int[4]; // A=0, B=1, C=2, D=3
         // overlays
         CanvasGroup standbyGroup, introGroup, resultGroup;
-        Text introA, introB, introVS, introRound;
+        Text introA, introB, introC, introD, introVS, introRound;
         Text resultText, resultScore;
         // attack banner (中二 style)
         CanvasGroup attackBannerGroup;
@@ -95,7 +100,11 @@ namespace CtfStage
         {
             if (d.teamA != null) aName.text = introA.text = d.teamA.name;
             if (d.teamB != null) bName.text = introB.text = d.teamB.name;
-            aScore.text = bScore.text = "0";
+            if (d.teamC != null) cName.text = introC.text = d.teamC.name;
+            if (d.teamD != null) dName.text = introD.text = d.teamD.name;
+            aScore.text = bScore.text = cScore.text = dScore.text = "0";
+            solveCounts = new int[4];
+            aFlags.text = bFlags.text = cFlags.text = dFlags.text = "";
             roundText.text = introRound.text = (d.round ?? "").ToUpper();
             solveLogEntries.Clear();
             UpdateSolveLogDisplay();
@@ -109,6 +118,14 @@ namespace CtfStage
         {
             aScore.text = d.scoreA.ToString();
             bScore.text = d.scoreB.ToString();
+            cScore.text = d.scoreC.ToString();
+            dScore.text = d.scoreD.ToString();
+
+            // Add flag emoji for each solve
+            int idx = TeamIndex(d.team);
+            if (idx >= 0) solveCounts[idx]++;
+            UpdateFlagDisplay();
+
             ShowAttackBanner(d.team, d.category);
             AddSolveLog(d);
         }
@@ -125,8 +142,41 @@ namespace CtfStage
             d.level == "hype" ? new Color(1f, 0.85f, 0.35f) : ink);
 
         void HandleBan(BanData d) => ShowBanner(
-            $"{(d.team == "A" ? aName.text : bName.text)} BANNED {StageConfig.Cat(d.category).label}",
+            $"{TeamName(d.team)} BANNED {StageConfig.Cat(d.category).label}",
             new Color(1f, 0.82f, 0.48f));
+
+        static int TeamIndex(string t)
+        {
+            switch (t) { case "A": return 0; case "B": return 1; case "C": return 2; case "D": return 3; default: return -1; }
+        }
+
+        string TeamName(string t)
+        {
+            switch (t) { case "A": return aName.text; case "B": return bName.text; case "C": return cName.text; case "D": return dName.text; default: return t; }
+        }
+
+        Color GetTeamColor(string t) => StageConfig.TeamColor(t);
+
+        void UpdateFlagDisplay()
+        {
+            // Use simple flag marker that renders in Arial
+            aFlags.text = FlagString(solveCounts[0]);
+            bFlags.text = FlagString(solveCounts[1]);
+            cFlags.text = FlagString(solveCounts[2]);
+            dFlags.text = FlagString(solveCounts[3]);
+        }
+
+        static string FlagString(int count)
+        {
+            if (count == 0) return "";
+            // Use * stars that always render in Arial
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < Mathf.Min(count, 12); i++)
+                sb.Append("* ");
+            if (count > 12) sb.Append(".. ");
+            sb.Append($"[{count}]");
+            return sb.ToString();
+        }
 
         // ================= sequences ================= //
         IEnumerator IntroSequence()
@@ -142,9 +192,9 @@ namespace CtfStage
         {
             bool draw = d.winner == "DRAW";
             resultText.text = draw ? "DRAW"
-                : $"{(d.winner == "A" ? aName.text : bName.text)} WINS";
-            resultText.color = d.winner == "A" ? teamAColor : d.winner == "B" ? teamBColor : ink;
-            resultScore.text = $"{d.scoreA} : {d.scoreB}";
+                : $"{TeamName(d.winner)} WINS";
+            resultText.color = draw ? ink : GetTeamColor(d.winner);
+            resultScore.text = $"A:{d.scoreA}  B:{d.scoreB}  C:{d.scoreC}  D:{d.scoreD}";
 
             resultGroup.alpha = 0f;
             yield return Fade(resultGroup, 1f, 0.4f);
@@ -178,8 +228,8 @@ namespace CtfStage
 
         void AddSolveLog(SolveData d)
         {
-            string teamName = d.team == "A" ? aName.text : bName.text;
-            Color teamColor = d.team == "A" ? teamAColor : teamBColor;
+            string teamName = TeamName(d.team);
+            Color teamColor = GetTeamColor(d.team);
             string hex = ColorUtility.ToHtmlStringRGB(teamColor);
             var info = StageConfig.Cat(d.category);
             string catHex = ColorUtility.ToHtmlStringRGB(info.color);
@@ -217,8 +267,8 @@ namespace CtfStage
         void ShowAttackBanner(string team, string category)
         {
             var info = StageConfig.Cat(category);
-            string teamName = team == "A" ? aName.text : bName.text;
-            Color teamCol = team == "A" ? teamAColor : teamBColor;
+            string teamName = TeamName(team);
+            Color teamCol = GetTeamColor(team);
 
             string[] names;
             if (!AttackNames.TryGetValue(category, out names))
@@ -352,21 +402,43 @@ namespace CtfStage
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
 
-            // ---- HUD ----
+            // ---- HUD (4-corner layout) ----
             roundText = Label(canvas.transform, "—", 34, new Color(0.73f, 0.66f, 1f), TextAnchor.MiddleCenter);
             Place(roundText, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -44), new Vector2(900, 50));
             timerText = Label(canvas.transform, "0:00", 72, ink, TextAnchor.MiddleCenter);
             Place(timerText, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -104), new Vector2(500, 96));
 
-            aName = Label(canvas.transform, "Team Alpha", 44, teamAColor, TextAnchor.MiddleLeft);
-            Place(aName, new Vector2(0, 1f), new Vector2(0, 1f), new Vector2(240, -52), new Vector2(520, 60));
-            aScore = Label(canvas.transform, "0", 84, ink, TextAnchor.MiddleLeft);
-            Place(aScore, new Vector2(0, 1f), new Vector2(0, 1f), new Vector2(240, -120), new Vector2(420, 96));
+            // Team A — top-left corner
+            aName = Label(canvas.transform, "Team Alpha", 44, teamAColor, TextAnchor.UpperLeft);
+            Place(aName, new Vector2(0, 1f), new Vector2(0, 1f), new Vector2(350, -50), new Vector2(400, 54));
+            aScore = Label(canvas.transform, "0", 64, ink, TextAnchor.UpperLeft);
+            Place(aScore, new Vector2(0, 1f), new Vector2(0, 1f), new Vector2(350, -102), new Vector2(200, 68));
+            aFlags = Label(canvas.transform, "", 30, teamAColor, TextAnchor.UpperLeft);
+            Place(aFlags, new Vector2(0, 1f), new Vector2(0, 1f), new Vector2(350, -166), new Vector2(400, 36));
 
-            bName = Label(canvas.transform, "Team Bravo", 44, teamBColor, TextAnchor.MiddleRight);
-            Place(bName, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-240, -52), new Vector2(520, 60));
-            bScore = Label(canvas.transform, "0", 84, ink, TextAnchor.MiddleRight);
-            Place(bScore, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-240, -120), new Vector2(420, 96));
+            // Team B — top-right corner
+            bName = Label(canvas.transform, "Team Bravo", 44, teamBColor, TextAnchor.UpperRight);
+            Place(bName, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-350, -50), new Vector2(400, 54));
+            bScore = Label(canvas.transform, "0", 64, ink, TextAnchor.UpperRight);
+            Place(bScore, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-350, -102), new Vector2(200, 68));
+            bFlags = Label(canvas.transform, "", 30, teamBColor, TextAnchor.UpperRight);
+            Place(bFlags, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-350, -166), new Vector2(400, 36));
+
+            // Team C — bottom-left corner
+            cName = Label(canvas.transform, "Team Charlie", 44, teamCColor, TextAnchor.LowerLeft);
+            Place(cName, new Vector2(0, 0), new Vector2(0, 0), new Vector2(350, 130), new Vector2(400, 54));
+            cScore = Label(canvas.transform, "0", 64, ink, TextAnchor.LowerLeft);
+            Place(cScore, new Vector2(0, 0), new Vector2(0, 0), new Vector2(350, 68), new Vector2(200, 68));
+            cFlags = Label(canvas.transform, "", 30, teamCColor, TextAnchor.LowerLeft);
+            Place(cFlags, new Vector2(0, 0), new Vector2(0, 0), new Vector2(350, 170), new Vector2(400, 36));
+
+            // Team D — bottom-right corner
+            dName = Label(canvas.transform, "Team Delta", 44, teamDColor, TextAnchor.LowerRight);
+            Place(dName, new Vector2(1f, 0), new Vector2(1f, 0), new Vector2(-350, 130), new Vector2(400, 54));
+            dScore = Label(canvas.transform, "0", 64, ink, TextAnchor.LowerRight);
+            Place(dScore, new Vector2(1f, 0), new Vector2(1f, 0), new Vector2(-350, 68), new Vector2(200, 68));
+            dFlags = Label(canvas.transform, "", 30, teamDColor, TextAnchor.LowerRight);
+            Place(dFlags, new Vector2(1f, 0), new Vector2(1f, 0), new Vector2(-350, 170), new Vector2(400, 36));
 
             // ---- solve log (bottom-center) ----
             var logBgGo = new GameObject("SolveLogBg", typeof(RectTransform));
@@ -374,7 +446,7 @@ namespace CtfStage
             var logBgImg = logBgGo.AddComponent<Image>();
             logBgImg.sprite = White();
             logBgImg.color = new Color(0.02f, 0.01f, 0.04f, 0.6f);
-            var logBgRT = Place(logBgImg, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 140), new Vector2(480, 240));
+            var logBgRT = Place(logBgImg, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 250), new Vector2(480, 240));
 
             solveLogText = Label(logBgGo.transform, "", 22, ink, TextAnchor.UpperCenter);
             solveLogText.supportRichText = true;
@@ -403,16 +475,20 @@ namespace CtfStage
             var stSub = Label(standbyGroup.transform, "STANDBY", 48, new Color(0.6f, 0.7f, 1f), TextAnchor.MiddleCenter);
             Place(stSub, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -70), new Vector2(900, 70));
 
-            // ---- intro overlay (VS) ----
+            // ---- intro overlay (4-team FFA) ----
             introGroup = Overlay("Intro", new Color(0.02f, 0.02f, 0.05f, 0.82f));
             introRound = Label(introGroup.transform, "", 40, new Color(0.73f, 0.66f, 1f), TextAnchor.MiddleCenter);
             Place(introRound, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 240), new Vector2(1200, 60));
-            introA = Label(introGroup.transform, "Team Alpha", 84, teamAColor, TextAnchor.MiddleCenter);
-            Place(introA, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-460, 20), new Vector2(820, 120));
-            introVS = Label(introGroup.transform, "VS", 180, Color.white, TextAnchor.MiddleCenter);
-            Place(introVS, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 20), new Vector2(400, 240));
-            introB = Label(introGroup.transform, "Team Bravo", 84, teamBColor, TextAnchor.MiddleCenter);
-            Place(introB, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(460, 20), new Vector2(820, 120));
+            introA = Label(introGroup.transform, "Team Alpha", 64, teamAColor, TextAnchor.MiddleCenter);
+            Place(introA, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-380, 80), new Vector2(600, 90));
+            introB = Label(introGroup.transform, "Team Bravo", 64, teamBColor, TextAnchor.MiddleCenter);
+            Place(introB, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(380, 80), new Vector2(600, 90));
+            introC = Label(introGroup.transform, "Team Charlie", 64, teamCColor, TextAnchor.MiddleCenter);
+            Place(introC, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-380, -60), new Vector2(600, 90));
+            introD = Label(introGroup.transform, "Team Delta", 64, teamDColor, TextAnchor.MiddleCenter);
+            Place(introD, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(380, -60), new Vector2(600, 90));
+            introVS = Label(introGroup.transform, "2v2v2v2", 100, Color.white, TextAnchor.MiddleCenter);
+            Place(introVS, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 10), new Vector2(400, 200));
             introGroup.alpha = 0f;
 
             // ---- result overlay ----
@@ -518,7 +594,7 @@ namespace CtfStage
             attackSubText = Label(atkGo.transform, "", 36, ink, TextAnchor.MiddleCenter);
             attackSubText.fontStyle = FontStyle.Italic;
             Place(attackSubText, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new Vector2(0, -55), new Vector2(1400, 50));
+                new Vector2(0, -55), new Vector2(2500, 50));
         }
 
         /// <summary>Tiny diamond accent (rotated square).</summary>

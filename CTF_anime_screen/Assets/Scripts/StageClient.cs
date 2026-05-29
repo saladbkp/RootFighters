@@ -124,6 +124,9 @@ namespace CtfStage
         public void InjectMatchStart(MatchStartData d) { if (verboseLog) Debug.Log("[StageClient] inject MATCH_START"); OnMatchStart?.Invoke(d); }
         public void InjectMatchEnd(MatchEndData d) { if (verboseLog) Debug.Log("[StageClient] inject MATCH_END"); OnMatchEnd?.Invoke(d); }
         public void InjectWrong(WrongData d)       { if (verboseLog) Debug.Log("[StageClient] inject WRONG"); OnWrong?.Invoke(d); }
+        public void InjectTimer(TimerData d)       { OnTimer?.Invoke(d); }
+        public void InjectBan(BanData d)           { if (verboseLog) Debug.Log("[StageClient] inject BAN"); OnBan?.Invoke(d); }
+        public void InjectAnnounce(AnnounceData d) { OnAnnounce?.Invoke(d); }
 
         async void OnApplicationQuit()
         {

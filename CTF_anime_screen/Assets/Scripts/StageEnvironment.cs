@@ -17,13 +17,18 @@ namespace CtfStage
     {
         static Material _emberMat;
 
-        public static void Build(Color teamA, Color teamB, float spacing, float groundY, Color sky)
+        public static void Build(Color teamA, Color teamB, float spacing, float groundY, Color sky,
+            Color teamC = default, Color teamD = default)
         {
-            Color neon = Color.Lerp(teamA, teamB, 0.5f);        // shared accent (cyan↔magenta → violet)
+            Color neon = Color.Lerp(teamA, teamB, 0.5f);
             BuildBackdrop(sky, neon);
             BuildFloor(groundY, neon);
-            BuildPlatform("Platform_A", -spacing, groundY, teamA);
-            BuildPlatform("Platform_B", +spacing, groundY, teamB);
+            float zBack = spacing * 0.8f;
+            float zFront = -spacing * 0.4f;
+            BuildPlatform("Platform_A", -spacing * 0.7f, zBack, groundY, teamA);
+            BuildPlatform("Platform_B", +spacing * 0.7f, zBack, groundY, teamB);
+            if (teamC != default) BuildPlatform("Platform_C", -spacing, zFront, groundY, teamC);
+            if (teamD != default) BuildPlatform("Platform_D", +spacing, zFront, groundY, teamD);
             BuildDivider(groundY, neon);
             BuildEmbers(spacing, groundY, neon);
             BuildPostFx();
@@ -73,12 +78,12 @@ namespace CtfStage
         }
 
         // ---- glowing team platforms ----------------------------------------- //
-        static void BuildPlatform(string name, float x, float groundY, Color color)
+        static void BuildPlatform(string name, float x, float z, float groundY, Color color)
         {
             var p = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             p.name = name;
             Object.Destroy(p.GetComponent<Collider>());
-            p.transform.position = new Vector3(x, groundY + 0.06f, 0f);
+            p.transform.position = new Vector3(x, groundY + 0.06f, z);
             p.transform.localScale = new Vector3(1.8f, 0.06f, 1.8f);
             var m = MakeMat("Universal Render Pipeline/Lit", null);
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color * 0.6f);
