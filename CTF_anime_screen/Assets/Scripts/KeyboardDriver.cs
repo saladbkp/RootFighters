@@ -254,8 +254,6 @@ namespace CtfStage
 
         void StartCategoryReveal()
         {
-            inReveal = true;
-
             // Parse win threshold from input
             if (winInput != null && int.TryParse(winInput.text, out int wt) && wt > 0)
                 winThreshold = wt;
@@ -265,10 +263,33 @@ namespace CtfStage
             // Reset solve counts
             solvesA = solvesB = solvesC = solvesD = 0;
 
-            // Pick 3 random unique categories (or more based on threshold)
-            int numCards = Mathf.Max(3, winThreshold + 1); // at least 3, or threshold+1
-            numCards = Mathf.Min(numCards, allCategories.Length); // can't exceed total
-            var pool = new List<string>(allCategories);
+            if (banEnabled)
+            {
+                // Ban phase first, then card reveal
+                // Semi-final: force 5 challenges, win=3
+                winThreshold = 3;
+                HideSetup();
+                StartBanPhase();
+            }
+            else
+            {
+                inReveal = true;
+                PickCategoriesAndReveal();
+            }
+        }
+
+        void PickCategoriesAndReveal()
+        {
+            // Pick random categories, excluding banned ones
+            int numCards = banEnabled ? 5 : Mathf.Max(3, winThreshold + 1);
+            numCards = Mathf.Min(numCards, allCategories.Length - bannedCategories.Count);
+
+            var pool = new List<string>();
+            for (int i = 0; i < allCategories.Length; i++)
+                if (!bannedCategories.Contains(allCategories[i]))
+                    pool.Add(allCategories[i]);
+
+            numCards = Mathf.Min(numCards, pool.Count);
             pickedCategories = new string[numCards];
             for (int i = 0; i < numCards; i++)
             {
@@ -277,6 +298,7 @@ namespace CtfStage
                 pool.RemoveAt(idx);
             }
 
+            inReveal = true;
             StartCoroutine(RevealSequence());
         }
 
@@ -402,40 +424,50 @@ namespace CtfStage
                 yield return new WaitForSeconds(1.2f);
             }
 
-            // All revealed — show "FIGHT!" or go to ban phase
+            // All revealed — show "FIGHT!" then start match
             yield return new WaitForSeconds(1.5f);
 
-            if (banEnabled)
-            {
-                // Transition to ban phase instead of starting match directly
-                yield return Fade(revealGroup, 0f, 0.5f);
-                inReveal = false;
-                StartBanPhase();
-            }
-            else
-            {
-                revealTitle.text = "FIGHT!";
-                revealTitle.color = new Color(1f, 0.85f, 0.35f);
-                StartCoroutine(Pop(revealTitle.rectTransform, 1.3f, 0.4f));
-                yield return new WaitForSeconds(4f);
+            revealTitle.text = "FIGHT!";
+            revealTitle.color = new Color(1f, 0.85f, 0.35f);
+            StartCoroutine(Pop(revealTitle.rectTransform, 1.3f, 0.4f));
+            yield return new WaitForSeconds(4f);
 
-                // Fade out reveal and start match
-                yield return Fade(revealGroup, 0f, 0.5f);
-                setupCanvas.gameObject.SetActive(false);
-                inReveal = false;
-                inSetup = false;
-                LaunchMatch();
-            }
+            yield return Fade(revealGroup, 0f, 0.5f);
+            setupCanvas.gameObject.SetActive(false);
+            inReveal = false;
+            inSetup = false;
+            LaunchMatch();
         }
 
         // ==================== BAN PHASE ==================== //
+
+        AudioClip banClip;
+        AudioSource banSrc;
 
         void StartBanPhase()
         {
             inBanPhase = true;
             bannedCategories.Clear();
             banStep = 0;
-            banTotalSteps = 4; // all 4 teams get to ban
+            banTotalSteps = 2; // semi-final: 2 teams ban (A and B)
+
+            // Load ban sound
+            if (banClip == null)
+            {
+                banClip = Resources.Load<AudioClip>("ban");
+                if (banClip == null)
+                {
+#if UNITY_EDITOR
+                    banClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Music/ban.wav");
+#endif
+                }
+            }
+            if (banSrc == null)
+            {
+                banSrc = gameObject.AddComponent<AudioSource>();
+                banSrc.playOnAwake = false;
+            }
+
             BuildBanUI();
             banGroup.alpha = 1f;
             UpdateBanDisplay();
@@ -446,21 +478,24 @@ namespace CtfStage
             string[] teamLabels = { "TEAM A", "TEAM B", "TEAM C", "TEAM D" };
             Color[] teamColors = { StageConfig.TeamAColor, StageConfig.TeamBColor, StageConfig.TeamCColor, StageConfig.TeamDColor };
 
-            string teamName = banStep < 4 ? GetSetupTeamName(banStep) : "";
+            string teamName = GetSetupTeamName(banStep);
             banTitle.text = $"{teamLabels[banStep]} BAN";
             banTitle.color = teamColors[banStep];
             banInstructions.text = $"{teamName}: Press 1-{allCategories.Length} to ban a category";
 
-            // Update card visuals
+            // Update card visuals — show ban count per category
             for (int i = 0; i < allCategories.Length; i++)
             {
                 var info = StageConfig.Cat(allCategories[i]);
-                bool isBanned = bannedCategories.Contains(allCategories[i]);
+                int banCount = 0;
+                foreach (var b in bannedCategories)
+                    if (b == allCategories[i]) banCount++;
 
-                if (isBanned)
+                if (banCount > 0)
                 {
                     banCardBgs[i].color = new Color(0.15f, 0.05f, 0.05f, 0.9f);
-                    banCardTexts[i].text = info.label.ToUpper() + "\n[BANNED]";
+                    string banLabel = banCount > 1 ? $"[BANNED x{banCount}]" : "[BANNED]";
+                    banCardTexts[i].text = info.label.ToUpper() + "\n" + banLabel;
                     banCardTexts[i].color = new Color(0.5f, 0.2f, 0.2f);
                 }
                 else
@@ -485,22 +520,17 @@ namespace CtfStage
             if (catIndex >= allCategories.Length) return;
             string cat = allCategories[catIndex];
 
-            // Can't ban same category twice
-            if (bannedCategories.Contains(cat)) return;
-
+            // Duplicate bans allowed (same category can be banned by both teams)
             bannedCategories.Add(cat);
             string[] teams = { "A", "B", "C", "D" };
             client.InjectBan(new BanData { team = teams[banStep], category = cat });
 
-            // Also remove from picked categories
-            var remaining = new List<string>(pickedCategories);
-            remaining.Remove(cat);
-            pickedCategories = remaining.ToArray();
+            // Play ban sound + VFX
+            StartCoroutine(BanVfx(catIndex));
 
             banStep++;
             if (banStep >= banTotalSteps)
             {
-                // Ban phase complete → start match
                 StartCoroutine(BanPhaseEnd());
             }
             else
@@ -509,22 +539,74 @@ namespace CtfStage
             }
         }
 
+        IEnumerator BanVfx(int catIndex)
+        {
+            // Play ban sound
+            if (banClip != null && banSrc != null)
+                banSrc.PlayOneShot(banClip, 1f);
+
+            // Flash the banned card red
+            if (catIndex < banCardBgs.Length)
+            {
+                var img = banCardBgs[catIndex];
+                var origColor = img.color;
+
+                // Red flash
+                img.color = new Color(0.8f, 0.1f, 0.1f, 1f);
+                yield return new WaitForSeconds(0.15f);
+                img.color = new Color(0.5f, 0.05f, 0.05f, 1f);
+                yield return new WaitForSeconds(0.1f);
+
+                // Shake effect
+                var rt = (RectTransform)img.transform;
+                var origPos = rt.anchoredPosition;
+                for (int s = 0; s < 6; s++)
+                {
+                    rt.anchoredPosition = origPos + new Vector2(Random.Range(-8f, 8f), Random.Range(-5f, 5f));
+                    yield return new WaitForSeconds(0.03f);
+                }
+                rt.anchoredPosition = origPos;
+
+                // Scale pop
+                StartCoroutine(Pop(rt, 1.15f, 0.25f));
+
+                // Settle to banned color
+                img.color = new Color(0.15f, 0.05f, 0.05f, 0.9f);
+            }
+
+            // Strikethrough X overlay on the card
+            if (catIndex < banCardTexts.Length)
+            {
+                var info = StageConfig.Cat(allCategories[catIndex]);
+                int banCount = 0;
+                foreach (var b in bannedCategories)
+                    if (b == allCategories[catIndex]) banCount++;
+                string banLabel = banCount > 1 ? $"[BANNED x{banCount}]" : "[BANNED]";
+                banCardTexts[catIndex].text = info.label.ToUpper() + "\n" + banLabel;
+                banCardTexts[catIndex].color = new Color(0.5f, 0.2f, 0.2f);
+            }
+
+            yield return new WaitForSeconds(0.8f);
+        }
+
         IEnumerator BanPhaseEnd()
         {
-            banTitle.text = "FIGHT!";
-            banTitle.color = new Color(1f, 0.85f, 0.35f);
-            banInstructions.text = "";
-            StartCoroutine(Pop(banTitle.rectTransform, 1.3f, 0.4f));
-            yield return new WaitForSeconds(3f);
-            yield return Fade(banGroup, 0f, 0.5f);
+            // Brief pause after last ban
+            yield return new WaitForSeconds(1.5f);
 
+            banTitle.text = "BANS LOCKED";
+            banTitle.color = new Color(1f, 0.4f, 0.4f);
+            banInstructions.text = $"{bannedCategories.Count} categories banned";
+            yield return new WaitForSeconds(2f);
+
+            // Fade out ban UI → transition to card reveal
+            yield return Fade(banGroup, 0f, 0.5f);
             if (banGroup.transform.parent != null)
                 Destroy(banGroup.gameObject);
-
-            setupCanvas.gameObject.SetActive(false);
             inBanPhase = false;
-            inSetup = false;
-            LaunchMatch();
+
+            // Now do the card reveal with remaining categories
+            PickCategoriesAndReveal();
         }
 
         void BuildBanUI()
@@ -613,7 +695,7 @@ namespace CtfStage
 
             var data = new MatchStartData
             {
-                round = $"FFA — {catList}",
+                round = banEnabled ? $"SEMI-FINAL — {catList}" : $"FFA — {catList}",
                 teamA = new TeamRef { name = nA },
                 teamB = new TeamRef { name = nB },
                 teamC = new TeamRef { name = nC },
