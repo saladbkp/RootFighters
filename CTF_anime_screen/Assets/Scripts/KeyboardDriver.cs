@@ -99,8 +99,11 @@ namespace CtfStage
             // Audio
             rollSrc = gameObject.AddComponent<AudioSource>();
             rollSrc.playOnAwake = false;
+            banSrc = gameObject.AddComponent<AudioSource>();
+            banSrc.playOnAwake = false;
 #if UNITY_EDITOR
             rollClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Music/roll.wav");
+            banClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Music/ban.wav");
             sprBackCard = LoadSprite("Assets/cards/back_card.png");
             sprRedCard = LoadSprite("Assets/cards/red_card.png");
             sprBlueCard = LoadSprite("Assets/cards/blue_card.png");
@@ -332,8 +335,9 @@ namespace CtfStage
             int cardsToReveal = Mathf.Min(3, pickedCategories.Length);
             for (int i = 0; i < cardsToReveal; i++)
             {
-                // Play roll sound
-                if (rollClip != null) rollSrc.PlayOneShot(rollClip, 0.9f);
+                // Play ban sound (louder than roll) for each card flip
+                if (banClip != null && banSrc != null) banSrc.PlayOneShot(banClip, 1f);
+                else if (rollClip != null) rollSrc.PlayOneShot(rollClip, 0.9f);
 
                 // Slot machine style: rapid shuffle of category names on back card
                 // Card spins on Y axis during shuffle, slowing down
@@ -455,23 +459,6 @@ namespace CtfStage
             banStep = 0;
             banTotalSteps = 2; // semi-final: 2 teams ban (A and B)
 
-            // Load ban sound
-            if (banClip == null)
-            {
-                banClip = Resources.Load<AudioClip>("ban");
-                if (banClip == null)
-                {
-#if UNITY_EDITOR
-                    banClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Music/ban.wav");
-#endif
-                }
-            }
-            if (banSrc == null)
-            {
-                banSrc = gameObject.AddComponent<AudioSource>();
-                banSrc.playOnAwake = false;
-            }
-
             BuildBanUI();
             banGroup.alpha = 1f;
             UpdateBanDisplay();
@@ -571,8 +558,9 @@ namespace CtfStage
                 }
                 rt.anchoredPosition = origPos;
 
-                // Scale pop
+                // Scale pop + particle VFX
                 StartCoroutine(Pop(rt, 1.15f, 0.25f));
+                SpawnCardVfx(rt, allCategories[catIndex]);
 
                 // Settle to banned color
                 img.color = new Color(0.15f, 0.05f, 0.05f, 0.9f);
