@@ -858,7 +858,7 @@ namespace CtfStage
             }
 
             // Timer input field
-            float timerY = 100 - 4 * 90; // below team D
+            float timerY = 100 - 4 * 80; // below team D, tighter spacing
             var timerLbl = MakeLabel(go.transform, "TIMER (MIN)", 32,
                 new Color(0.8f, 0.75f, 0.9f), TextAnchor.MiddleRight);
             Place(timerLbl, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
@@ -914,7 +914,7 @@ namespace CtfStage
             timerInput.caretColor = new Color(0.8f, 0.75f, 0.9f);
 
             // Win threshold input field
-            float winY = timerY - 90;
+            float winY = timerY - 80;
             var winLbl = MakeLabel(go.transform, "WIN (SOLVES)", 32,
                 new Color(1f, 0.85f, 0.35f), TextAnchor.MiddleRight);
             Place(winLbl, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
@@ -970,7 +970,7 @@ namespace CtfStage
             winInput.caretColor = new Color(1f, 0.85f, 0.35f);
 
             // Ban toggle hint
-            float banY = winY - 70;
+            float banY = winY - 60;
             var banHint = MakeLabel(go.transform, "[ B ] TOGGLE BAN PHASE: OFF",
                 26, new Color(0.6f, 0.5f, 0.7f), TextAnchor.MiddleCenter);
             Place(banHint, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
@@ -981,7 +981,7 @@ namespace CtfStage
             promptText = MakeLabel(go.transform, "[ ENTER ] START  |  [ TAB ] NEXT FIELD  |  [ B ] BAN TOGGLE",
                 26, new Color(0.5f, 0.55f, 0.7f), TextAnchor.MiddleCenter);
             Place(promptText, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new Vector2(0, -350), new Vector2(1000, 36));
+                new Vector2(0, banY - 50), new Vector2(1000, 36));
         }
 
         void BuildRevealUI()
